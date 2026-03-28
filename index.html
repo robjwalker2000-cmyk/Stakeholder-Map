@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Stakeholder-Map</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Stakeholder Map</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+
+  <!-- CSV Import Panel -->
+  <div id="csvPanel" class="csv-panel" aria-hidden="true">
+    <div class="csv-panel-inner">
+      <div class="csv-panel-head">
+        <div class="csv-title">Paste CSV (one stakeholder per line)</div>
+        <button id="csvClose" class="csv-close">✕</button>
+      </div>
+
+      <div class="csv-help">
+        Format: <code>Name,Title,Role,Influence,View,Contact,Owner[,LinkedIn][,X][,Y]</code><br>
+        Example: <code>Jane Smith,CIO,D,H,+,M,RW,https://linkedin.com/in/janesmith,60,60</code>
+      </div>
+<div class="csv-file-row">
+  <label class="csv-file-label">
+    📂 Load CSV file
+    <input type="file" id="csvFileInput" accept=".csv,text/csv" hidden>
+  </label>
+</div>
+      <textarea id="csvInput" spellcheck="false" placeholder="Paste lines here..."></textarea>
+
+      <div class="csv-actions">
+        <button id="csvPreview">👀 Preview</button>
+        <button id="csvImport" class="primary">✅ Import</button>
+      </div>
+
+      <div id="csvPreviewOut" class="csv-preview"></div>
+    </div>
+  </div>
+
+  <!-- CSV Export Panel -->
+  <div id="csvExportPanel" class="csv-panel" aria-hidden="true">
+    <div class="csv-panel-inner">
+      <div class="csv-panel-head">
+        <div class="csv-title">Export CSV</div>
+        <button id="csvExportClose" class="csv-close">✕</button>
+      </div>
+
+      <div class="csv-help" id="csvHelp">
+        Output format: <code>Name,Title,Role,Influence,View,Contact,Owner,LinkedIn,X,Y</code>
+      </div>
+
+      <div class="csv-actions" style="justify-content: space-between;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button id="csvExportGenerate">🧾 Generate</button>
+          <button id="csvExportCopy" class="primary">📋 Copy</button>
+        </div>
+        <button id="csvExportDownload">⬇️ Download .csv</button>
+      </div>
+
+      <textarea id="csvExportOut" spellcheck="false" readonly></textarea>
+    </div>
+  </div>
+
+  <!-- Relationship context menu (kept separate from CSV panels) -->
+  <div id="relMenu" class="rel-menu" aria-hidden="true"></div>
+  <div id="stakeMenu" class="rel-menu" aria-hidden="true"></div>
+  <header>
+    <h1>Stakeholder Map</h1>
+    <div class="controls">
+      <button id="addStakeholder">➕ Add Stakeholder</button>
+      <button id="linkMode">🔗 Reporting Mode</button>
+<!--  <button id="exportPDF">⬇️ Download PDF</button>  -->
+     
+      <button id="exportPPTX">📊 Export PowerPoint</button>
+      <button id="exportPPTXa">📊 Beta PowerPoint</button>
+      <button id="resetMap">🔄 Reset</button>
+      <button id="importCSV">📥 Import CSV</button>
+      <button id="exportCSV">📤 Export CSV</button>
+      <button id="toggleOwners">👥 Show/Hide Owners</button>
+    </div>
+  </header>
+<!-- Owners Panel -->
+<div id="ownersPanel" class="owners-panel" aria-hidden="false">
+  <div class="owners-head">
+    <button id="ownersClose" class="owners-close" type="button" aria-label="Hide owners">✕</button>
+    <div class="owners-title">Owners</div>
+    <div class="owners-actions">
+      <button id="ownersAddBtn">➕ Add</button>
+      <button id="ownersImportBtn">📥 Import (paste)</button>
+      <button id="ownersClearBtn">🧹 Clear</button>
+    </div>
+  </div>
+
+  <div id="ownersList" class="owners-list"></div>
+
+  <div class="owners-hint">
+    Codes are what you store in cards (e.g. <b>RW</b>). Labels are what you show (e.g. <b>Rob Walker</b>).
+  </div>
+</div>
+  
+  <main id="canvas">
+    <svg id="lines">
+      <defs>
+        <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="3" orient="auto">
+          <path d="M0,0 L10,3 L0,6 Z" fill="#111"></path>
+        </marker>
+      </defs>
+    </svg>
+
+    <!-- Long-form hover card -->
+    <div id="hovercard" class="hovercard" aria-hidden="true">
+      <div class="hc-top">
+        <div class="hc-avatar" id="hcAvatar">—</div>
+        <div class="hc-identity">
+          <div class="hc-name" id="hcName">Name</div>
+          <div class="hc-title" id="hcTitle">Role / Title</div>
+        </div>
+      </div>
+
+      <div class="hc-grid">
+        <div class="hc-item">
+          <div class="hc-label">Role</div>
+          <div class="hc-value">
+            <span class="dot" id="hcRoleDot"></span>
+            <span id="hcRole">—</span>
+          </div>
+        </div>
+
+        <div class="hc-item">
+          <div class="hc-label">Relationship Owner</div>
+          <div class="hc-value">
+            <span class="dot" id="hcOwnerDot"></span>
+            <span id="hcOwner">—</span>
+          </div>
+        </div>
+
+        <div class="hc-item">
+          <div class="hc-label">Influence</div>
+          <div class="hc-value">
+            <span class="dot" id="hcInfluenceDot"></span>
+            <span id="hcInfluence">—</span>
+          </div>
+        </div>
+
+        <div class="hc-item">
+          <div class="hc-label">Contact Level</div>
+          <div class="hc-value">
+            <span class="dot" id="hcContactDot"></span>
+            <span id="hcContact">—</span>
+          </div>
+        </div>
+
+        <div class="hc-item hc-wide">
+          <div class="hc-label">View of Infor</div>
+          <div class="hc-value">
+            <span class="dot" id="hcViewDot"></span>
+            <span id="hcView">—</span>
+          </div>
+          <div class="hc-muted" id="hcAdvice"></div>
+        </div>
+      </div>
+
+      <div class="hc-rel">
+        <div class="hc-rel-box">
+          <div class="hc-label">Reports To</div>
+          <div class="hc-rel-value" id="hcReportsTo">—</div>
+        </div>
+        <div class="hc-rel-box">
+          <div class="hc-label">Direct Reports</div>
+          <div class="hc-rel-value" id="hcDirectReports">—</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- libs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+
+<script src="script.js"></script>
+</body>
+</html>
