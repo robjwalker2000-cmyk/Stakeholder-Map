@@ -81,6 +81,16 @@ let OWNER_VALUES = ["HA", "RS", "RW"]; // default
 let csvMode = "stakeholders"; // or "owners"
 
 // ---------- Lazy loaders ----------
+const LIB_URLS = {
+  html2canvas: [
+    "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
+  ],
+  pptxgen: [
+    "https://cdn.jsdelivr.net/npm/pptxgenjs/dist/pptxgen.bundle.js",
+    "https://unpkg.com/pptxgenjs@3.13.0/dist/pptxgen.bundle.js"
+  ]
+};
+
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     const s = document.createElement("script");
@@ -90,9 +100,26 @@ function loadScript(src) {
     document.head.appendChild(s);
   });
 }
+async function loadFirstAvailable(urls) {
+  let lastError;
+  for (const url of urls) {
+    try {
+      await loadScript(url);
+      return true;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+async function ensureHtml2Canvas() {
+  if (window.html2canvas) return true;
+  await loadFirstAvailable(LIB_URLS.html2canvas);
+  return !!window.html2canvas;
+}
 async function ensurePptxGen() {
   if (window.PptxGenJS) return true;
-  await loadScript("https://unpkg.com/pptxgenjs@3.13.0/dist/pptxgen.bundle.js");
+  await loadFirstAvailable(LIB_URLS.pptxgen);
   return !!window.PptxGenJS;
 }
 
@@ -1463,9 +1490,10 @@ const exportPPTXBetaBtn = document.getElementById("exportPPTXa");
 if (exportPPTXBetaBtn) exportPPTXBetaBtn.onclick = exportToPPTXBeta;
 
 async function exportToPPTX() {
-  if (!window.html2canvas) {
-    alert("html2canvas is not loaded. Add it in CodePen Settings → JS.");
-    return;
+  try {
+    await ensureHtml2Canvas();
+  } catch (e) {
+    console.error("Failed to load html2canvas:", e);
   }
 
   try {
@@ -1474,8 +1502,13 @@ async function exportToPPTX() {
     console.error("Failed to load PptxGenJS:", e);
   }
 
+  if (!window.html2canvas) {
+    alert("html2canvas failed to load. Check the GitHub page script tags or CDN access.");
+    return;
+  }
+
   if (!window.PptxGenJS) {
-    alert("PptxGenJS failed to load. Check CodePen external scripts, or try unpkg/jsdelivr.");
+    alert("PptxGenJS failed to load. Check the GitHub page script tags, or try unpkg/jsdelivr.");
     return;
   }
 
