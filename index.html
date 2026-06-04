@@ -65,7 +65,10 @@
   <div id="relMenu" class="rel-menu" aria-hidden="true"></div>
   <div id="stakeMenu" class="rel-menu" aria-hidden="true"></div>
   <header>
-    <h1>Stakeholder Map</h1>
+    <div class="brand-title">
+      <h1>Stakeholder Map</h1>
+      <span class="version-badge">v1.3</span>
+    </div>
     <div class="controls">
       <button id="addStakeholder">➕ Add Stakeholder</button>
       <button id="linkMode">🔗 Reporting Mode</button>
@@ -76,6 +79,7 @@
       <button id="resetMap">🔄 Reset</button>
       <button id="importCSV">📥 Import CSV</button>
       <button id="exportCSV">📤 Export CSV</button>
+      <button id="toggleLinkedIn">🔗 Show LinkedIn URL</button>
       <button id="toggleOwners">👥 Show/Hide Owners</button>
     </div>
   </header>
@@ -101,8 +105,8 @@
   <main id="canvas">
     <svg id="lines">
       <defs>
-        <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="3" orient="auto">
-          <path d="M0,0 L10,3 L0,6 Z" fill="#111"></path>
+        <marker id="arrow" markerWidth="12" markerHeight="8" refX="12" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+          <path d="M0,0 L12,4 L0,8 Z" fill="#111"></path>
         </marker>
       </defs>
     </svg>

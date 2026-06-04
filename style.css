@@ -34,6 +34,23 @@ header h1 {
   font-weight: 700;
 }
 
+.brand-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.version-badge {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
 .controls button {
   margin-left: 6px;
   padding: 8px 10px;
@@ -59,6 +76,23 @@ header h1 {
   cursor: pointer;
 }
 
+.relationship-endpoint {
+  fill: #fff;
+  stroke: #111;
+  stroke-width: 2;
+  cursor: pointer;
+  pointer-events: all;
+}
+
+.relationship-endpoint:hover {
+  fill: #fee2e2;
+  stroke: #b91c1c;
+}
+
+.relationship-endpoint.hidden {
+  display: none;
+}
+
 /* FIXED STAKEHOLDER CARD WIDTH */
 .stakeholder {
   width: 340px !important;
@@ -70,6 +104,56 @@ header h1 {
   cursor: move;
   user-select: none;
   font-size: 14px;
+}
+
+.stakeholder.selecting {
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.28), var(--shadow);
+}
+
+.connection-anchor {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 2px solid #111;
+  border-radius: 999px;
+  background: #fff;
+  cursor: crosshair;
+  z-index: 5;
+}
+
+.connection-anchor:hover,
+.connection-anchor.active {
+  background: #22c55e;
+  border-color: #14532d;
+}
+
+.connection-anchor.active {
+  box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.26);
+}
+
+.anchor-top {
+  left: 50%;
+  top: -10px;
+  transform: translateX(-50%);
+}
+
+.anchor-right {
+  right: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.anchor-bottom {
+  left: 50%;
+  bottom: -10px;
+  transform: translateX(-50%);
+}
+
+.anchor-left {
+  left: -10px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .stakeholder-header {
@@ -123,6 +207,26 @@ header h1 {
 .linkedinInput {
   color: var(--muted);
   font-size: 13px;
+}
+
+.linkedinDisplay {
+  display: block;
+  width: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff;
+  color: #2563eb;
+  font-size: 13px;
+  line-height: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.linkedinDisplay:hover {
+  text-decoration: underline;
 }
 
 /* Divider */
@@ -454,6 +558,14 @@ header h1 {
 
 .rel-menu button:hover{
   background: #f3f4f6;
+}
+
+.rel-menu-note {
+  max-width: 260px;
+  padding: 4px 10px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
 }
 
 .owners-panel{

@@ -36,6 +36,7 @@ const hcAdvice = document.getElementById("hcAdvice");
 const hcReportsTo = document.getElementById("hcReportsTo");
 const hcDirectReports = document.getElementById("hcDirectReports");
 const toggleOwnersBtn = document.getElementById("toggleOwners");
+const toggleLinkedInBtn = document.getElementById("toggleLinkedIn");
 const ownersPanel = document.getElementById("ownersPanel");
 
 if (toggleOwnersBtn && ownersPanel) {
@@ -61,7 +62,9 @@ let nextId = 1;
 let zIndex = 1;
 let relationshipMode = false;
 let selectedManager = null;
+let selectedConnectionStart = null;
 let selectedRelationshipId = null;
+let showLinkedInUrl = localStorage.getItem("showLinkedInUrl") === "true";
 const GRID = 20;
 const relationships = [];
 
@@ -169,16 +172,86 @@ function escapeHtml(str) {
     .replaceAll("'", "&#039;");
 }
 
+function getLinkedInValue(el) {
+  const field = el.querySelector(".linkedinInput");
+  const display = el.querySelector(".linkedinDisplay");
+  const value = field?.value || display?.href || el.dataset.linkedin || "";
+  return value.trim();
+}
+
+function attachLinkedInInputHandlers(el, input) {
+  input.oninput = () => {
+    el.dataset.linkedin = input.value.trim();
+  };
+
+  input.onchange = () => {
+    el.dataset.linkedin = input.value.trim();
+    renderLinkedInField(el);
+  };
+}
+
+function renderLinkedInField(el) {
+  const meta = el.querySelector(".meta");
+  if (!meta) return;
+
+  const url = getLinkedInValue(el);
+  el.dataset.linkedin = url;
+
+  const existing = meta.querySelector(".linkedinInput, .linkedinDisplay");
+  if (showLinkedInUrl && isValidLinkedIn(url)) {
+    const link = document.createElement("a");
+    link.className = "linkedinDisplay";
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = url;
+    link.title = url;
+    link.onclick = (e) => e.stopPropagation();
+    link.onmousedown = (e) => e.stopPropagation();
+    if (existing) existing.replaceWith(link);
+    else meta.appendChild(link);
+    return;
+  }
+
+  const input = document.createElement("input");
+  input.className = "linkedinInput";
+  input.placeholder = "LinkedIn URL";
+  input.value = url;
+  attachLinkedInInputHandlers(el, input);
+  if (existing) existing.replaceWith(input);
+  else meta.appendChild(input);
+}
+
+function updateLinkedInToggleButton() {
+  if (!toggleLinkedInBtn) return;
+  toggleLinkedInBtn.style.background = showLinkedInUrl ? "#22c55e" : "";
+}
+
+function updateLinkedInVisibility() {
+  updateLinkedInToggleButton();
+  canvas.querySelectorAll(".stakeholder").forEach((el) => renderLinkedInField(el));
+}
+
 // ---------- BUTTONS ----------
 addBtn.onclick = () => createStakeholder(40, 40);
 
+if (toggleLinkedInBtn) {
+  updateLinkedInToggleButton();
+  toggleLinkedInBtn.onclick = () => {
+    showLinkedInUrl = !showLinkedInUrl;
+    localStorage.setItem("showLinkedInUrl", String(showLinkedInUrl));
+    updateLinkedInVisibility();
+  };
+}
+
 linkBtn.onclick = () => {
   relationshipMode = !relationshipMode;
-  selectedManager = null;
+  clearSelectedManager();
   linkBtn.style.background = relationshipMode ? "#22c55e" : "";
   hideHovercard();
   hideRelMenu();
   hideStakeMenu();
+  updateRelationshipModeVisuals();
 };
 
 resetBtn.onclick = () => {
@@ -187,11 +260,58 @@ resetBtn.onclick = () => {
 };
 
 // ---------- REL MENU ----------
-function showRelMenu(x, y) {
+function clearSelectedManager() {
+  if (selectedManager) selectedManager.classList.remove("selecting");
+  document.querySelectorAll(".connection-anchor.active").forEach((anchor) => {
+    anchor.classList.remove("active");
+  });
+  selectedManager = null;
+  selectedConnectionStart = null;
+}
+
+function getStakeholderNameById(id) {
+  const el = document.querySelector(`.stakeholder[data-id="${id}"]`);
+  return el?.querySelector(".name")?.value || "Unnamed";
+}
+
+function deleteRelationshipById(id) {
+  const index = relationships.findIndex((rel) => rel.id === id);
+  if (index === -1) return;
+
+  deleteRelationshipAt(index);
+  hideRelMenu();
+  updateLines();
+}
+
+function deleteRelationshipAt(index) {
+  const rel = relationships[index];
+  [rel.line, rel.startHandle, rel.endHandle].forEach((node) => {
+    if (node && node.parentNode) node.parentNode.removeChild(node);
+  });
+  relationships.splice(index, 1);
+}
+
+function showRelMenu(x, y, relId = selectedRelationshipId) {
+  selectedRelationshipId = relId;
+  const rel = relationships.find((item) => item.id === selectedRelationshipId);
+  if (!rel) return;
+
+  const managerName = getStakeholderNameById(rel.managerId);
+  const reportName = getStakeholderNameById(rel.reportId);
+  relMenu.innerHTML = `
+    <button id="relDeleteBtn" type="button">🗑️ Delete connection</button>
+    <div class="rel-menu-note">${escapeHtml(managerName)} → ${escapeHtml(reportName)}</div>
+  `;
+
   const r = canvas.getBoundingClientRect();
   relMenu.style.left = x - r.left + canvas.scrollLeft + 10 + "px";
   relMenu.style.top = y - r.top + canvas.scrollTop + 10 + "px";
   relMenu.classList.add("show");
+
+  relMenu.querySelector("#relDeleteBtn").onclick = (e) => {
+    e.stopPropagation();
+    deleteRelationshipById(selectedRelationshipId);
+  };
 }
 function hideRelMenu() {
   relMenu.classList.remove("show");
@@ -251,6 +371,7 @@ function createStakeholder(x, y) {
       ${statusBox(["H", "M", "L", "N"], "contact", false)}
       ${statusBox(OWNER_VALUES, "owner", true)}
     </div>
+    ${connectionAnchors()}
   `;
 
   enableDrag(el);
@@ -258,24 +379,29 @@ function createStakeholder(x, y) {
   enableStatus(el);
   enableLinkedIn(el);
   enableClick(el);
+  enableRelationshipAnchors(el);
   enableStakeholderContextMenu(el);
 
   canvas.appendChild(el);
+  updateRelationshipModeVisuals();
 }
 
 function statusBox(v, t, a) {
   return `<div class="status-box" data-values='${JSON.stringify(v)}' data-type="${t}" data-always-green="${a}"></div>`;
 }
 
+function connectionAnchors() {
+  return `
+    <button class="connection-anchor anchor-top hidden" type="button" data-anchor="top" aria-label="Top connection point"></button>
+    <button class="connection-anchor anchor-right hidden" type="button" data-anchor="right" aria-label="Right connection point"></button>
+    <button class="connection-anchor anchor-bottom hidden" type="button" data-anchor="bottom" aria-label="Bottom connection point"></button>
+    <button class="connection-anchor anchor-left hidden" type="button" data-anchor="left" aria-label="Left connection point"></button>
+  `;
+}
+
 // ---------- LINKEDIN ----------
 function enableLinkedIn(el) {
-  const input = el.querySelector(".linkedinInput");
-  input.onchange = () => {
-    if (isValidLinkedIn(input.value)) {
-      el.dataset.linkedin = input.value.trim();
-      input.remove();
-    }
-  };
+  renderLinkedInField(el);
 }
 
 // ---------- DRAG ----------
@@ -283,7 +409,7 @@ function enableDrag(el) {
   let drag = false, ox = 0, oy = 0;
 
   el.addEventListener("mousedown", (e) => {
-    if (e.target.closest("input") || e.target.closest(".status-box")) return;
+    if (e.target.closest("input") || e.target.closest("a") || e.target.closest(".status-box") || e.target.closest(".connection-anchor")) return;
     drag = true;
     ox = e.clientX - el.offsetLeft;
     oy = e.clientY - el.offsetTop;
@@ -314,13 +440,24 @@ function enablePhotoUpload(el) {
 
   p.onclick = () => i.click();
   i.onchange = (e) => {
-    if (!e.target.files[0]) return;
-    const img = document.createElement("img");
-    img.src = URL.createObjectURL(e.target.files[0]);
-    s?.remove();
-    // clear any existing image
-    p.querySelector("img")?.remove();
-    p.appendChild(img);
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      if (typeof dataUrl !== "string") return;
+
+      const img = document.createElement("img");
+      img.src = dataUrl;
+      el.dataset.photo = dataUrl;
+
+      s?.remove();
+      // clear any existing image
+      p.querySelector("img")?.remove();
+      p.appendChild(img);
+    };
+    reader.readAsDataURL(file);
   };
 }
 
@@ -359,6 +496,54 @@ function enableStatus(el) {
 }
 
 // ---------- CLICK / HOVERCARD / LINKING ----------
+function setConnectionStart(el, anchor) {
+  clearSelectedManager();
+  selectedManager = el;
+  selectedConnectionStart = { el, anchor };
+  el.classList.add("selecting");
+  el.querySelector(`.connection-anchor[data-anchor="${anchor}"]`)?.classList.add("active");
+}
+
+function completeConnectionTo(el, anchor) {
+  if (!selectedConnectionStart) {
+    setConnectionStart(el, anchor);
+    return;
+  }
+
+  if (selectedConnectionStart.el === el) {
+    if (selectedConnectionStart.anchor === anchor) {
+      clearSelectedManager();
+      return;
+    }
+
+    setConnectionStart(el, anchor);
+    return;
+  }
+
+  addRelationship(
+    selectedConnectionStart.el.dataset.id,
+    el.dataset.id,
+    selectedConnectionStart.anchor,
+    anchor
+  );
+  clearSelectedManager();
+}
+
+function enableRelationshipAnchors(el) {
+  el.querySelectorAll(".connection-anchor").forEach((anchorBtn) => {
+    anchorBtn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!relationshipMode) return;
+
+      hideHovercard();
+      hideRelMenu();
+      hideStakeMenu();
+      completeConnectionTo(el, anchorBtn.dataset.anchor || "bottom");
+    };
+  });
+}
+
 function enableClick(el) {
   el.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -367,16 +552,7 @@ function enableClick(el) {
     hideStakeMenu();
 
     if (relationshipMode) {
-      if (!selectedManager) {
-        selectedManager = el;
-        el.classList.add("selecting");
-        return;
-      }
-      if (selectedManager !== el) {
-        addRelationship(selectedManager.dataset.id, el.dataset.id);
-      }
-      selectedManager.classList.remove("selecting");
-      selectedManager = null;
+      completeConnectionTo(el, selectedConnectionStart ? "top" : "bottom");
       return;
     }
 
@@ -387,47 +563,131 @@ function enableClick(el) {
 }
 
 // ---------- RELATIONSHIPS ----------
-function addRelationship(m, r) {
-  if (relationships.some((x) => x.managerId === m && x.reportId === r)) return;
+function addRelationship(m, r, managerAnchor = "bottom", reportAnchor = "top") {
+  const existingIndex = relationships.findIndex((x) =>
+    x.managerId === m &&
+    x.reportId === r &&
+    (x.managerAnchor || "bottom") === managerAnchor &&
+    (x.reportAnchor || "top") === reportAnchor
+  );
+
+  if (existingIndex !== -1) {
+    deleteRelationshipAt(existingIndex);
+    updateLines();
+    return;
+  }
+
   relationships.push({
     id: "rel_" + Math.random(),
     managerId: m,
     reportId: r,
-    line: null
+    managerAnchor,
+    reportAnchor,
+    line: null,
+    startHandle: null,
+    endHandle: null
   });
   redraw();
 }
 
+function openRelationshipMenu(rel, event) {
+  event.stopPropagation();
+  selectedRelationshipId = rel.id;
+  showRelMenu(event.clientX, event.clientY, rel.id);
+}
+
+function createRelationshipEndpoint(rel, position) {
+  const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  c.setAttribute("r", "7");
+  c.setAttribute("data-rel-id", rel.id);
+  c.setAttribute("data-endpoint", position);
+  c.classList.add("relationship-endpoint");
+  if (!relationshipMode) c.classList.add("hidden");
+  c.onclick = (e) => openRelationshipMenu(rel, e);
+  return c;
+}
+
+function updateRelationshipModeVisuals() {
+  canvas.classList.toggle("reporting-mode", relationshipMode);
+  canvas.querySelectorAll(".connection-anchor").forEach((anchor) => {
+    anchor.classList.toggle("hidden", !relationshipMode);
+  });
+  svg.querySelectorAll(".relationship-endpoint").forEach((handle) => {
+    handle.classList.toggle("hidden", !relationshipMode);
+  });
+}
+
+function getCardAnchorPoint(el, anchor) {
+  const x = parseInt(el.style.left || "0", 10);
+  const y = parseInt(el.style.top || "0", 10);
+  const w = el.offsetWidth || 340;
+  const h = el.offsetHeight || 160;
+
+  if (anchor === "top") return { x: x + w / 2, y };
+  if (anchor === "right") return { x: x + w, y: y + h / 2 };
+  if (anchor === "left") return { x, y: y + h / 2 };
+  return { x: x + w / 2, y: y + h };
+}
+
+function updateLineLayerSize() {
+  let maxX = canvas.clientWidth;
+  let maxY = canvas.clientHeight;
+
+  canvas.querySelectorAll(".stakeholder").forEach((el) => {
+    const x = parseInt(el.style.left || "0", 10);
+    const y = parseInt(el.style.top || "0", 10);
+    maxX = Math.max(maxX, x + el.offsetWidth + 80);
+    maxY = Math.max(maxY, y + el.offsetHeight + 80);
+  });
+
+  svg.style.width = maxX + "px";
+  svg.style.height = maxY + "px";
+  svg.setAttribute("width", maxX);
+  svg.setAttribute("height", maxY);
+}
+
 function redraw() {
-  svg.querySelectorAll("line").forEach((l) => l.remove());
+  svg.querySelectorAll(".relationship-line, .relationship-endpoint").forEach((node) => node.remove());
   relationships.forEach((rel) => {
     const l = document.createElementNS("http://www.w3.org/2000/svg", "line");
     l.setAttribute("stroke", "#111");
     l.setAttribute("stroke-width", "2");
     l.setAttribute("marker-end", "url(#arrow)");
-    l.onclick = (e) => {
-      e.stopPropagation();
-      selectedRelationshipId = rel.id;
-      showRelMenu(e.clientX, e.clientY);
-    };
+    l.setAttribute("data-rel-id", rel.id);
+    l.classList.add("relationship-line");
+    l.onclick = (e) => openRelationshipMenu(rel, e);
     svg.appendChild(l);
     rel.line = l;
+
+    rel.startHandle = createRelationshipEndpoint(rel, "manager");
+    rel.endHandle = createRelationshipEndpoint(rel, "report");
+    svg.appendChild(rel.startHandle);
+    svg.appendChild(rel.endHandle);
   });
   updateLines();
 }
 
 function updateLines() {
-  const cr = canvas.getBoundingClientRect();
+  updateLineLayerSize();
+
   relationships.forEach((r) => {
     const m = document.querySelector(`.stakeholder[data-id="${r.managerId}"]`);
     const d = document.querySelector(`.stakeholder[data-id="${r.reportId}"]`);
     if (!m || !d) return;
-    const mr = m.getBoundingClientRect();
-    const dr = d.getBoundingClientRect();
-    r.line.setAttribute("x1", mr.left - cr.left + mr.width / 2);
-    r.line.setAttribute("y1", mr.top - cr.top + mr.height);
-    r.line.setAttribute("x2", dr.left - cr.left + dr.width / 2);
-    r.line.setAttribute("y2", dr.top - cr.top);
+    const start = getCardAnchorPoint(m, r.managerAnchor || "bottom");
+    const end = getCardAnchorPoint(d, r.reportAnchor || "top");
+    r.line.setAttribute("x1", start.x);
+    r.line.setAttribute("y1", start.y);
+    r.line.setAttribute("x2", end.x);
+    r.line.setAttribute("y2", end.y);
+    if (r.startHandle) {
+      r.startHandle.setAttribute("cx", start.x);
+      r.startHandle.setAttribute("cy", start.y);
+    }
+    if (r.endHandle) {
+      r.endHandle.setAttribute("cx", end.x);
+      r.endHandle.setAttribute("cy", end.y);
+    }
   });
 }
 
@@ -894,9 +1154,10 @@ function applyOwners(ownerMap) {
 // ---------- CLEAR ----------
 function clearAll() {
   canvas.querySelectorAll(".stakeholder").forEach((e) => e.remove());
-  svg.querySelectorAll("line").forEach((l) => l.remove());
+  svg.querySelectorAll(".relationship-line, .relationship-endpoint").forEach((node) => node.remove());
   relationships.length = 0;
   relationshipMode = false;
+  clearSelectedManager();
   linkBtn.style.background = "";
   hideHovercard();
   hideRelMenu();
@@ -1422,7 +1683,7 @@ function generateCSVExport() {
     const x = parseInt(el.style.left || "0", 10);
     const y = parseInt(el.style.top || "0", 10);
 
-    // photo URL (may be blob: if uploaded locally; portable only if it's a real URL)
+    // photo URL or data URL
     const photoImg = el.querySelector(".photo img");
     const photoUrl = photoImg?.src || "";
 
@@ -1467,6 +1728,7 @@ function computeInitials(name) {
 
 async function tryGetImageDataUrl(src) {
   if (!src) return null;
+  if (/^data:/i.test(src)) return src;
   // blob: from file uploads can't be fetched reliably; skip
   if (/^blob:/i.test(src)) return null;
 
@@ -1482,12 +1744,205 @@ async function tryGetImageDataUrl(src) {
     return null;
   }
 }
+
+function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+async function createCircularImageDataUrl(src, size = 256) {
+  try {
+    const img = await loadImageElement(src);
+    const exportCanvas = document.createElement("canvas");
+    exportCanvas.width = size;
+    exportCanvas.height = size;
+    const ctx = exportCanvas.getContext("2d");
+    if (!ctx) return null;
+
+    const sourceSize = Math.min(img.naturalWidth || img.width, img.naturalHeight || img.height);
+    const sx = ((img.naturalWidth || img.width) - sourceSize) / 2;
+    const sy = ((img.naturalHeight || img.height) - sourceSize) / 2;
+
+    ctx.clearRect(0, 0, size, size);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = "#f3f4f6";
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, (size / 2) - 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, (size / 2) - 3, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(img, sx, sy, sourceSize, sourceSize, 0, 0, size, size);
+    ctx.restore();
+
+    ctx.strokeStyle = "#111111";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, (size / 2) - 3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    return exportCanvas.toDataURL("image/png");
+  } catch {
+    return null;
+  }
+}
 // ---------- EXPORT PPTX ----------
 const exportPPTXBtn = document.getElementById("exportPPTX");
 if (exportPPTXBtn) exportPPTXBtn.onclick = exportToPPTX;
 
 const exportPPTXBetaBtn = document.getElementById("exportPPTXa");
 if (exportPPTXBetaBtn) exportPPTXBetaBtn.onclick = exportToPPTXBeta;
+
+function getNormalExportStakeholderById(id) {
+  return canvas.querySelector(`.stakeholder[data-id="${id}"]`);
+}
+
+function getNormalExportAnchorPoint(el, anchor) {
+  return getCardAnchorPoint(el, anchor);
+}
+
+function getNormalExportBounds(stakeholders) {
+  const bounds = getStakeholderBounds(stakeholders);
+  let minX = bounds.x;
+  let minY = bounds.y;
+  let maxX = bounds.x + bounds.w;
+  let maxY = bounds.y + bounds.h;
+  const points = [];
+
+  relationships.forEach((rel) => {
+    const manager = getNormalExportStakeholderById(rel.managerId);
+    const report = getNormalExportStakeholderById(rel.reportId);
+    if (!manager || !report) return;
+
+    points.push(getNormalExportAnchorPoint(manager, rel.managerAnchor || "bottom"));
+    points.push(getNormalExportAnchorPoint(report, rel.reportAnchor || "top"));
+  });
+
+  points.forEach((point) => {
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  });
+
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+function syncClonedFormValues(source, clone) {
+  const sourceInputs = [...source.querySelectorAll("input, textarea")];
+  const cloneInputs = [...clone.querySelectorAll("input, textarea")];
+
+  cloneInputs.forEach((input, i) => {
+    const sourceInput = sourceInputs[i];
+    if (!sourceInput) return;
+    if (input.type === "file" || sourceInput.type === "file") return;
+    input.value = sourceInput.value;
+    input.setAttribute("value", sourceInput.value);
+  });
+}
+
+function waitForSnapshotImages(root) {
+  const images = [...root.querySelectorAll("img")];
+  return Promise.all(images.map((img) => {
+    if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+
+    return new Promise((resolve) => {
+      img.onload = () => resolve();
+      img.onerror = () => {
+        img.remove();
+        resolve();
+      };
+    });
+  }));
+}
+
+function replaceSnapshotTextInputs(clone) {
+  clone.querySelectorAll("input:not([type='file']), textarea").forEach((input) => {
+    const field = document.createElement("div");
+    field.className = `${input.className} snapshot-text-field`.trim();
+    field.textContent = input.value || input.placeholder || "";
+    field.style.width = "100%";
+    field.style.minHeight = "22px";
+    field.style.border = "1px solid rgba(0, 0, 0, 0.18)";
+    field.style.borderRadius = "8px";
+    field.style.padding = "3px 8px";
+    field.style.fontSize = input.classList.contains("name") ? "13px" : "12px";
+    field.style.fontWeight = input.classList.contains("name") ? "700" : "400";
+    field.style.lineHeight = "16px";
+    field.style.color = "#000";
+    field.style.background = "#fff";
+    field.style.display = "flex";
+    field.style.alignItems = "center";
+    field.style.overflow = "hidden";
+    field.style.whiteSpace = "nowrap";
+    field.style.textOverflow = "ellipsis";
+    input.replaceWith(field);
+  });
+}
+
+function syncClonedRelationshipLines(canvasClone) {
+  const clonedLines = [...canvasClone.querySelectorAll(".relationship-line")];
+  relationships.forEach((rel, i) => {
+    const manager = canvasClone.querySelector(`.stakeholder[data-id="${rel.managerId}"]`);
+    const report = canvasClone.querySelector(`.stakeholder[data-id="${rel.reportId}"]`);
+    const line = canvasClone.querySelector(`.relationship-line[data-rel-id="${rel.id}"]`) || clonedLines[i];
+    if (!manager || !report || !line) return;
+
+    const start = getNormalExportAnchorPoint(manager, rel.managerAnchor || "bottom");
+    const end = getNormalExportAnchorPoint(report, rel.reportAnchor || "top");
+    line.setAttribute("x1", start.x);
+    line.setAttribute("y1", start.y);
+    line.setAttribute("x2", end.x);
+    line.setAttribute("y2", end.y);
+  });
+}
+
+function createNormalExportSurface(stakeholders, bounds) {
+  const padding = 40;
+  const surface = document.createElement("div");
+  surface.style.position = "absolute";
+  surface.style.left = "-100000px";
+  surface.style.top = "0";
+  surface.style.width = bounds.w + padding * 2 + "px";
+  surface.style.height = bounds.h + padding * 2 + "px";
+  surface.style.background = "#ffffff";
+  surface.style.overflow = "hidden";
+
+  const canvasClone = canvas.cloneNode(true);
+  canvasClone.removeAttribute("id");
+  canvasClone.style.position = "absolute";
+  canvasClone.style.left = padding - bounds.x + "px";
+  canvasClone.style.top = padding - bounds.y + "px";
+  canvasClone.style.width = canvas.scrollWidth + "px";
+  canvasClone.style.height = canvas.scrollHeight + "px";
+  canvasClone.style.overflow = "visible";
+  canvasClone.style.background = "#ffffff";
+
+  const sourceStakeholders = [...canvas.querySelectorAll(".stakeholder")];
+  const clonedStakeholders = [...canvasClone.querySelectorAll(".stakeholder")];
+  clonedStakeholders.forEach((clone, i) => {
+    const source = sourceStakeholders[i];
+    if (!source) return;
+    syncClonedFormValues(source, clone);
+    clone.querySelectorAll('input[type="file"]').forEach((input) => input.remove());
+    replaceSnapshotTextInputs(clone);
+    clone.querySelectorAll(".connection-anchor").forEach((anchor) => anchor.remove());
+    clone.classList.remove("selecting");
+  });
+
+  canvasClone.querySelectorAll(".relationship-endpoint, #hovercard, #relMenu, #stakeMenu").forEach((node) => node.remove());
+  syncClonedRelationshipLines(canvasClone);
+  surface.appendChild(canvasClone);
+  document.body.appendChild(surface);
+  return surface;
+}
 
 async function exportToPPTX() {
   try {
@@ -1513,29 +1968,37 @@ async function exportToPPTX() {
   }
 
   try {
-    const toHide = [hovercard, relMenu, csvPanel, csvExportPanel, stakeMenu].filter(Boolean);
-    const prevDisplay = toHide.map(el => el.style.display);
-    toHide.forEach(el => (el.style.display = "none"));
+    const stakeholders = [...canvas.querySelectorAll(".stakeholder")];
+    if (!stakeholders.length) {
+      alert("No stakeholders on canvas.");
+      return;
+    }
 
-    const shot = await html2canvas(canvas, {
-      backgroundColor: "#ffffff",
-      scale: 2,
-      useCORS: true,
-      allowTaint: false,
-      logging: false,
-      onclone: (doc) => {
-        doc.querySelectorAll("img").forEach(img => {
-          const src = img.getAttribute("src") || "";
-          // remove remote images if they might taint
-          if (/^https?:\/\//i.test(src)) {
-            // keep them if you trust your CORS setup; remove if you hit tainting
-            // img.remove();
-          }
-        });
-      }
-    });
-
-    toHide.forEach((el, i) => (el.style.display = prevDisplay[i]));
+    const bounds = getNormalExportBounds(stakeholders);
+    const exportSurface = createNormalExportSurface(stakeholders, bounds);
+    await waitForSnapshotImages(exportSurface);
+    let shot;
+    try {
+      shot = await html2canvas(exportSurface, {
+        backgroundColor: "#ffffff",
+        scale: 3,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        onclone: (doc) => {
+          doc.querySelectorAll("img").forEach(img => {
+            const src = img.getAttribute("src") || "";
+            // remove remote images if they might taint
+            if (/^https?:\/\//i.test(src)) {
+              // keep them if you trust your CORS setup; remove if you hit tainting
+              // img.remove();
+            }
+          });
+        }
+      });
+    } finally {
+      exportSurface.remove();
+    }
 
     let dataUrl;
     try {
@@ -1637,13 +2100,122 @@ async function exportToPPTXBeta() {
   const offsetX = (SLIDE_W - bounds.w * scale) / 2;
   const offsetY = (SLIDE_H - bounds.h * scale) / 2;
 
+  drawRelationshipLines(slide, bounds, scale, offsetX, offsetY, ST);
+
   for (const el of stakeholders) {
     await drawStakeholderCard(slide, el, bounds, scale, offsetX, offsetY, ST);
   }
 
   await pptx.writeFile({ fileName: "stakeholder-map-beta.pptx" });
 }
+
+function getStakeholderById(id) {
+  return canvas.querySelector(`.stakeholder[data-id="${id}"]`);
+}
+
+function getAnchorCanvasPoint(el, anchor) {
+  const x = parseInt(el.style.left || "0", 10);
+  const y = parseInt(el.style.top || "0", 10);
+  const w = el.offsetWidth || 340;
+  const h = el.offsetHeight || 160;
+
+  if (anchor === "top") return { x: x + w / 2, y };
+  if (anchor === "right") return { x: x + w, y: y + h / 2 };
+  if (anchor === "left") return { x, y: y + h / 2 };
+  return { x: x + w / 2, y: y + h };
+}
+
+function drawRelationshipLines(slide, bounds, scale, offsetX, offsetY, ST) {
+  if (!ST.line) return;
+
+  relationships.forEach((rel) => {
+    const manager = getStakeholderById(rel.managerId);
+    const report = getStakeholderById(rel.reportId);
+    if (!manager || !report) return;
+
+    const start = getAnchorCanvasPoint(manager, rel.managerAnchor || "bottom");
+    const end = getAnchorCanvasPoint(report, rel.reportAnchor || "top");
+    const sx = toSlideX(start.x, bounds, scale, offsetX);
+    const sy = toSlideY(start.y, bounds, scale, offsetY);
+    const ex = toSlideX(end.x, bounds, scale, offsetX);
+    const ey = toSlideY(end.y, bounds, scale, offsetY);
+    const lineW = ex - sx;
+    const lineH = ey - sy;
+    const isVertical = Math.abs(lineW) < 0.001;
+    const isHorizontal = Math.abs(lineH) < 0.001;
+
+    slide.addShape(ST.line, {
+      x: Math.min(sx, ex),
+      y: Math.min(sy, ey),
+      w: isVertical ? 0.001 : Math.abs(lineW),
+      h: isHorizontal ? 0.001 : Math.abs(lineH),
+      flipH: lineW < 0,
+      flipV: lineH < 0,
+      line: {
+        color: "111111",
+        width: 1.25,
+        endArrowType: "triangle"
+      }
+    });
+  });
+}
+
+function getSlideObjects(slide) {
+  return slide?._slideObjects || slide?._slideObjs || slide?.slideObjects || null;
+}
+
+function createGroupingCollector(slide) {
+  const objects = [];
+
+  const collectAfter = (methodName, args) => {
+    const list = getSlideObjects(slide);
+    const beforeCount = Array.isArray(list) ? list.length : 0;
+    const result = slide[methodName](...args);
+    const afterList = getSlideObjects(slide);
+
+    if (Array.isArray(afterList) && afterList.length > beforeCount) {
+      objects.push(...afterList.slice(beforeCount));
+    } else if (result && result !== slide) {
+      objects.push(result);
+    }
+
+    return result;
+  };
+
+  return {
+    objects,
+    addShape: (...args) => collectAfter("addShape", args),
+    addText: (...args) => collectAfter("addText", args),
+    addImage: (...args) => collectAfter("addImage", args)
+  };
+}
+
+function tryGroupCardObjects(slide, objects, name) {
+  if (!objects || objects.length < 2) return false;
+
+  try {
+    if (typeof slide.addGroup === "function") {
+      slide.addGroup(objects, { name });
+      return true;
+    }
+    if (typeof slide.groupObjects === "function") {
+      slide.groupObjects(objects, { name });
+      return true;
+    }
+    if (typeof slide.group === "function") {
+      slide.group(objects, { name });
+      return true;
+    }
+  } catch (error) {
+    console.warn("PptxGenJS grouping failed; leaving card elements ungrouped.", error);
+  }
+
+  return false;
+}
+
 async function drawStakeholderCard(slide, el, bounds, scale, offsetX, offsetY, ST) {
+  const cardGroup = createGroupingCollector(slide);
+  const cardSlide = cardGroup;
   const x = parseInt(el.style.left || "0", 10);
   const y = parseInt(el.style.top || "0", 10);
 
@@ -1672,7 +2244,7 @@ async function drawStakeholderCard(slide, el, bounds, scale, offsetX, offsetY, S
 //  const statusY = sy + sh - statusH - (15 * scale); // added - (15* scale)
 
   // Card background (rounded)
-  slide.addShape(ST.roundRect, {
+  cardSlide.addShape(ST.roundRect, {
     x: sx,
     y: sy,
     w: sw,
@@ -1686,7 +2258,7 @@ async function drawStakeholderCard(slide, el, bounds, scale, offsetX, offsetY, S
   const photoSize = 42 * scale;
 
   // Photo circle
-  slide.addShape(ST.ellipse, {
+  cardSlide.addShape(ST.ellipse, {
     x: sx + pad,
     y: sy + pad,
     w: photoSize,
@@ -1699,7 +2271,7 @@ async function drawStakeholderCard(slide, el, bounds, scale, offsetX, offsetY, S
   const title = el.querySelector(".titleInput")?.value || "Role / Title";
 
   // Name/title to the right of photo
-  slide.addText(name, {
+  cardSlide.addText(name, {
     x: sx + pad + photoSize + (10 * scale),
     y: sy + pad + (2 * scale),
     w: sw - (pad * 2) - photoSize - (1 * scale), // change from 10
@@ -1710,7 +2282,7 @@ async function drawStakeholderCard(slide, el, bounds, scale, offsetX, offsetY, S
     color: "111111"
   });
   
-  slide.addText(title, {
+  cardSlide.addText(title, {
     x: sx + pad + photoSize + (10 * scale),
     y: sy + pad + (40 * scale), // changed from 20
     w: sw - (pad * 2) - photoSize - (10 * scale),
@@ -1724,9 +2296,24 @@ async function drawStakeholderCard(slide, el, bounds, scale, offsetX, offsetY, S
   const imgSrc = el.querySelector(".photo img")?.src || "";
   const dataUrl = await tryGetImageDataUrl(imgSrc);
   if (dataUrl) {
-    slide.addImage({ data: dataUrl, x: sx + pad, y: sy + pad, w: photoSize, h: photoSize });
+    const circularDataUrl = await createCircularImageDataUrl(dataUrl);
+    if (circularDataUrl) {
+      cardSlide.addImage({ data: circularDataUrl, x: sx + pad, y: sy + pad, w: photoSize, h: photoSize });
+    } else {
+      cardSlide.addText(computeInitials(name), {
+        x: sx - pad,
+        y: sy + pad,
+        w: photoSize * 2,
+        h: photoSize,
+        align: "center",
+        fontFace: "Calibri",
+        fontSize: Math.max(6, 14 * scale),
+        bold: true,
+        color: "111111"
+      });
+    }
   } else {
-    slide.addText(computeInitials(name), {
+    cardSlide.addText(computeInitials(name), {
       x: sx - pad ,//+ pad,  take off the pad and made it - pad
       y: sy + pad , // taken off pad - + pad + (photoSize * 0.18),
       w: photoSize*2 , // added multiplier
@@ -1765,7 +2352,7 @@ const tiles = [
 const tileW = statusW / tiles.length;
 
 // Rounded status bar background (with border)
-slide.addShape(ST.roundRect, {
+cardSlide.addShape(ST.roundRect, {
   x: statusX,
   y: statusY,
   w: statusW,
@@ -1779,7 +2366,7 @@ tiles.forEach((t, i) => {
   const tx = statusX + tileW * i;
   const fill = hexFromStatus(t.type, t.val);
 
-  slide.addShape(ST.rect, {
+  cardSlide.addShape(ST.rect, {
     x: tx,
     y: statusY,
     w: tileW,
@@ -1789,7 +2376,7 @@ tiles.forEach((t, i) => {
   });
 
   if (i < tiles.length - 1) {
-    slide.addShape(ST.line, {
+    cardSlide.addShape(ST.line, {
       x: tx + tileW,
       y: statusY,
       w: 0.001,
@@ -1800,7 +2387,7 @@ tiles.forEach((t, i) => {
 
   const txt = (t.val || "").toString();
   if (txt) {
-    slide.addText(txt, {
+    cardSlide.addText(txt, {
       x: tx,
       y: statusY + (statusH * 0.18),
       w: tileW,
@@ -1815,7 +2402,7 @@ tiles.forEach((t, i) => {
 });
 
 // Border on top (keeps outline crisp over fills)
-slide.addShape(ST.roundRect, {
+cardSlide.addShape(ST.roundRect, {
   x: statusX,
   y: statusY,
   w: statusW,
@@ -1835,6 +2422,10 @@ slide.addShape(ST.roundRect, {
     line: { color: "111111", width: dividerLineW }
   });
 */
+  const grouped = tryGroupCardObjects(slide, cardGroup.objects, `stakeholder-${el.dataset.id || "card"}`);
+  if (!grouped && cardGroup.objects.length) {
+    console.info("PptxGenJS grouping API unavailable; exported card as editable separate elements.");
+  }
 }
 
   
