@@ -67,6 +67,9 @@ let selectedRelationshipId = null;
 let showLinkedInUrl = localStorage.getItem("showLinkedInUrl") === "true";
 const GRID = 20;
 const relationships = [];
+const AUTOSAVE_KEY = "stakeholderMapAutosave:v1";
+let autosaveTimer = null;
+let isRestoringAutosave = false;
 
 // ---------- MAPS ----------
 const maps = {
@@ -182,11 +185,13 @@ function getLinkedInValue(el) {
 function attachLinkedInInputHandlers(el, input) {
   input.oninput = () => {
     el.dataset.linkedin = input.value.trim();
+    scheduleAutosave();
   };
 
   input.onchange = () => {
     el.dataset.linkedin = input.value.trim();
     renderLinkedInField(el);
+    scheduleAutosave();
   };
 }
 
@@ -215,8 +220,8 @@ function renderLinkedInField(el) {
 
   const input = document.createElement("input");
   input.className = "linkedinInput";
-  input.placeholder = "LinkedIn URL";
-  input.value = url;
+  input.placeholder = url ? "LinkedIn URL saved" : "LinkedIn URL";
+  input.value = showLinkedInUrl ? url : "";
   attachLinkedInInputHandlers(el, input);
   if (existing) existing.replaceWith(input);
   else meta.appendChild(input);
@@ -232,8 +237,135 @@ function updateLinkedInVisibility() {
   canvas.querySelectorAll(".stakeholder").forEach((el) => renderLinkedInField(el));
 }
 
+function collectMapState() {
+  return {
+    version: 1,
+    nextId,
+    zIndex,
+    showLinkedInUrl,
+    owners: getOwnersModel(),
+    stakeholders: [...canvas.querySelectorAll(".stakeholder")].map((el) => ({
+      id: el.dataset.id,
+      csvId: getCardExportId(el),
+      x: parseInt(el.style.left || "0", 10),
+      y: parseInt(el.style.top || "0", 10),
+      zIndex: parseInt(el.style.zIndex || "1", 10),
+      name: el.querySelector(".name")?.value || "",
+      title: el.querySelector(".titleInput")?.value || "",
+      linkedin: el.dataset.linkedin || getLinkedInValue(el),
+      photoUrl: el.dataset.photo || el.querySelector(".photo img")?.src || "",
+      role: getStatus(el, "role"),
+      influence: getStatus(el, "influence"),
+      view: getStatus(el, "view"),
+      contact: getStatus(el, "contact"),
+      owner: getStatus(el, "owner")
+    })),
+    relationships: relationships.map((rel) => ({
+      managerId: rel.managerId,
+      reportId: rel.reportId,
+      managerAnchor: rel.managerAnchor || "bottom",
+      reportAnchor: rel.reportAnchor || "top"
+    }))
+  };
+}
+
+function saveMapStateNow() {
+  if (isRestoringAutosave) return;
+  try {
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(collectMapState()));
+  } catch (error) {
+    console.warn("Map autosave failed.", error);
+  }
+}
+
+function scheduleAutosave() {
+  if (isRestoringAutosave) return;
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(saveMapStateNow, 250);
+}
+
+function clearAutosave() {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = null;
+  localStorage.removeItem(AUTOSAVE_KEY);
+}
+
+function restoreMapFromAutosave() {
+  const raw = localStorage.getItem(AUTOSAVE_KEY);
+  if (!raw) return false;
+
+  let state;
+  try {
+    state = JSON.parse(raw);
+  } catch {
+    clearAutosave();
+    return false;
+  }
+
+  if (!state || !Array.isArray(state.stakeholders)) return false;
+
+  isRestoringAutosave = true;
+  try {
+    canvas.querySelectorAll(".stakeholder").forEach((e) => e.remove());
+    svg.querySelectorAll(".relationship-line, .relationship-endpoint").forEach((node) => node.remove());
+    relationships.length = 0;
+
+    if (state.owners && typeof state.owners === "object") {
+      ownersToModel(state.owners);
+    }
+
+    const idMap = {};
+    state.stakeholders.forEach((item) => {
+      const el = createStakeholderFromData({
+        name: item.name,
+        title: item.title,
+        role: item.role,
+        influence: item.influence,
+        view: item.view,
+        contact: item.contact,
+        owner: item.owner,
+        linkedin: item.linkedin,
+        x: item.x,
+        y: item.y,
+        photoUrl: item.photoUrl,
+        cardId: item.csvId
+      });
+      if (!el) return;
+      if (item.id) {
+        const oldId = el.dataset.id;
+        el.dataset.id = String(item.id);
+        idMap[oldId] = el.dataset.id;
+      }
+      if (Number.isFinite(Number(item.zIndex))) el.style.zIndex = String(item.zIndex);
+    });
+
+    nextId = Math.max(
+      Number(state.nextId) || 1,
+      ...[...canvas.querySelectorAll(".stakeholder")].map((el) => Number(el.dataset.id) + 1).filter(Number.isFinite)
+    );
+    zIndex = Math.max(Number(state.zIndex) || 1, nextId);
+    showLinkedInUrl = !!state.showLinkedInUrl;
+    updateLinkedInVisibility();
+
+    (state.relationships || []).forEach((rel) => {
+      const managerId = idMap[rel.managerId] || rel.managerId;
+      const reportId = idMap[rel.reportId] || rel.reportId;
+      if (!managerId || !reportId) return;
+      addRelationship(managerId, reportId, rel.managerAnchor || "bottom", rel.reportAnchor || "top", { toggleExisting: false });
+    });
+
+    redraw();
+    return true;
+  } finally {
+    isRestoringAutosave = false;
+  }
+}
+
 // ---------- BUTTONS ----------
-addBtn.onclick = () => createStakeholder(40, 40);
+addBtn.onclick = () => {
+  createStakeholder(40, 40);
+  scheduleAutosave();
+};
 
 if (toggleLinkedInBtn) {
   updateLinkedInToggleButton();
@@ -241,6 +373,7 @@ if (toggleLinkedInBtn) {
     showLinkedInUrl = !showLinkedInUrl;
     localStorage.setItem("showLinkedInUrl", String(showLinkedInUrl));
     updateLinkedInVisibility();
+    scheduleAutosave();
   };
 }
 
@@ -257,6 +390,7 @@ linkBtn.onclick = () => {
 resetBtn.onclick = () => {
   if (!confirm("Reset stakeholder map?")) return;
   clearAll();
+  clearAutosave();
 };
 
 // ---------- REL MENU ----------
@@ -281,6 +415,7 @@ function deleteRelationshipById(id) {
   deleteRelationshipAt(index);
   hideRelMenu();
   updateLines();
+  scheduleAutosave();
 }
 
 function deleteRelationshipAt(index) {
@@ -423,7 +558,11 @@ function enableDrag(el) {
     updateLines();
   });
 
-  document.addEventListener("mouseup", () => (drag = false));
+  document.addEventListener("mouseup", () => {
+    if (!drag) return;
+    drag = false;
+    scheduleAutosave();
+  });
 }
 
 // ---------- PHOTO (Upload by file click) ----------
@@ -436,7 +575,11 @@ function enablePhotoUpload(el) {
   n.oninput = () => {
     const a = n.value.trim().split(" ");
     s.textContent = ((a[0]?.[0] || "") + (a[1]?.[0] || "")).toUpperCase();
+    scheduleAutosave();
   };
+
+  const titleInput = el.querySelector(".titleInput");
+  if (titleInput) titleInput.oninput = scheduleAutosave;
 
   p.onclick = () => i.click();
   i.onchange = (e) => {
@@ -456,6 +599,7 @@ function enablePhotoUpload(el) {
       // clear any existing image
       p.querySelector("img")?.remove();
       p.appendChild(img);
+      scheduleAutosave();
     };
     reader.readAsDataURL(file);
   };
@@ -483,6 +627,7 @@ function enableStatus(el) {
         (b.dataset.type === "owner" && v === "-")
       ) {
         b.className = "status-box white";
+        scheduleAutosave();
         return;
       }
 
@@ -491,6 +636,7 @@ function enableStatus(el) {
         (b.dataset.alwaysGreen === "true"
           ? "green"
           : colorClass(b.dataset.type, v));
+      scheduleAutosave();
     };
   });
 }
@@ -563,7 +709,8 @@ function enableClick(el) {
 }
 
 // ---------- RELATIONSHIPS ----------
-function addRelationship(m, r, managerAnchor = "bottom", reportAnchor = "top") {
+function addRelationship(m, r, managerAnchor = "bottom", reportAnchor = "top", options = {}) {
+  const toggleExisting = options.toggleExisting !== false;
   const existingIndex = relationships.findIndex((x) =>
     x.managerId === m &&
     x.reportId === r &&
@@ -572,8 +719,10 @@ function addRelationship(m, r, managerAnchor = "bottom", reportAnchor = "top") {
   );
 
   if (existingIndex !== -1) {
+    if (!toggleExisting) return;
     deleteRelationshipAt(existingIndex);
     updateLines();
+    scheduleAutosave();
     return;
   }
 
@@ -588,6 +737,7 @@ function addRelationship(m, r, managerAnchor = "bottom", reportAnchor = "top") {
     endHandle: null
   });
   redraw();
+  scheduleAutosave();
 }
 
 function openRelationshipMenu(rel, event) {
@@ -770,6 +920,7 @@ function deleteStakeholder(el) {
   hideHovercard();
   hideRelMenu();
   hideStakeMenu();
+  scheduleAutosave();
 }
 
 function enableStakeholderContextMenu(el) {
@@ -876,6 +1027,7 @@ function ownersToModel(ownerMap) {
   refreshOwnerStatusValues();
   renderOwnersPanel();
   saveOwnersToStorage();
+  scheduleAutosave();
 }
 
 function getOwnersModel() {
@@ -1149,6 +1301,7 @@ function applyOwners(ownerMap) {
   }, {});
 
   refreshOwnerStatusValues();
+  scheduleAutosave();
 }
 
 // ---------- CLEAR ----------
@@ -1188,8 +1341,10 @@ csvInput.value = prefill ?? "";
       `;
     } else {
       csvHelp.innerHTML = `
-        Format: <code>Name,Title,Role,Influence,View,Contact,Owner,LinkedIn,X,Y,PhotoURL</code><br>
-        Example: <code>Jane Smith,CIO,D,H,+,M,RW,https://linkedin.com/in/janesmith,60,60,https://example.com/jane.jpg</code><br>
+        Format: <code>Name,Title,Role,Influence,View,Contact,Owner,LinkedIn,X,Y,PhotoURL,CardID</code><br>
+        Relationship rows: <code>RELATIONSHIP,FromCardID,FromAnchor,ToCardID,ToAnchor</code><br>
+        Example: <code>Jane Smith,CIO,D,H,+,M,RW,https://linkedin.com/in/janesmith,60,60,https://example.com/jane.jpg,card-1</code><br>
+        Example relationship: <code>RELATIONSHIP,card-1,bottom,card-2,top</code><br>
         (Owners can be included in the same file using <code>OWNER:XX=Name</code> lines above the stakeholders.)
       `;
     }
@@ -1244,9 +1399,21 @@ function createStakeholderFromData(data) {
 
   const el = canvas.querySelector(".stakeholder:last-of-type");
   if (!el) return;
+  el.dataset.csvId = data.cardId || `card-${el.dataset.id}`;
 
   const nameInput = el.querySelector(".name");
   const titleInput = el.querySelector(".titleInput");
+
+  nameInput.oninput = () => {
+    const initials = el.querySelector(".initials");
+    if (initials) {
+      const a = nameInput.value.trim().split(" ");
+      initials.textContent = ((a[0]?.[0] || "") + (a[1]?.[0] || "")).toUpperCase();
+    }
+    scheduleAutosave();
+  };
+
+  titleInput.oninput = scheduleAutosave;
 
   nameInput.value = data.name ?? "";
   titleInput.value = data.title ?? "";
@@ -1288,6 +1455,7 @@ function createStakeholderFromData(data) {
   if (data.owner) setStatus(el, "owner", data.owner);
 
   updateLines();
+  return el;
 }
 
 // ---------- CSV PARSE (Stakeholders) ----------
@@ -1300,29 +1468,14 @@ function parseCSVLines(text) {
       l &&
       !l.startsWith("#") &&
       !/^OWNER\s*:/i.test(l) &&               // ignore OWNER lines here
+      !/^RELATIONSHIP\s*,/i.test(l) &&        // ignore relationship lines here
       !/^Name\s*,\s*Title\s*,/i.test(l)       // ignore header row
     );
 
-  // basic CSV split (supports simple quotes)
-  const splitCSV = (line) => {
-    const out = [];
-    let cur = "";
-    let inQ = false;
-
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') { inQ = !inQ; continue; }
-      if (ch === "," && !inQ) { out.push(cur.trim()); cur = ""; continue; }
-      cur += ch;
-    }
-    out.push(cur.trim());
-    return out;
-  };
-
   return lines.map((line, idx) => {
-    const cols = splitCSV(line);
+    const cols = splitCSVLine(line);
 
-    // Name,Title,Role,Influence,View,Contact,Owner,LinkedIn,X,Y,PhotoURL
+    // Name,Title,Role,Influence,View,Contact,Owner,LinkedIn,X,Y,PhotoURL,CardID
     const [
       name,
       title,
@@ -1334,7 +1487,8 @@ function parseCSVLines(text) {
       linkedin = "",
       xRaw = "",
       yRaw = "",
-      photoUrl = ""
+      photoUrl = "",
+      cardId = ""
     ] = cols;
 
     // ---- normalise codes ----
@@ -1369,10 +1523,66 @@ function parseCSVLines(text) {
     return {
       lineNo: idx + 1,
       raw: line,
-      data: { name, title, role, influence, view, contact, owner, linkedin, x, y, photoUrl },
+      data: { name, title, role, influence, view, contact, owner, linkedin, x, y, photoUrl, cardId },
       errors
     };
   });
+}
+
+function parseRelationshipLines(text) {
+  const validAnchors = ["top", "right", "bottom", "left"];
+  const lines = text
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l =>
+      l &&
+      !l.startsWith("#") &&
+      /^RELATIONSHIP\s*,/i.test(l)
+      && !/^RELATIONSHIP\s*,\s*FromCardID\s*,/i.test(l)
+    );
+
+  return lines.map((line, idx) => {
+    const cols = splitCSVLine(line);
+    const [, fromCardId = "", fromAnchorRaw = "", toCardId = "", toAnchorRaw = ""] = cols;
+    const fromAnchor = String(fromAnchorRaw || "").trim().toLowerCase();
+    const toAnchor = String(toAnchorRaw || "").trim().toLowerCase();
+    const errors = [];
+
+    if (!fromCardId) errors.push("Missing from CardID");
+    if (!toCardId) errors.push("Missing to CardID");
+    if (!validAnchors.includes(fromAnchor)) errors.push(`Start anchor must be ${validAnchors.join("/")}`);
+    if (!validAnchors.includes(toAnchor)) errors.push(`End anchor must be ${validAnchors.join("/")}`);
+
+    return {
+      lineNo: idx + 1,
+      raw: line,
+      data: { fromCardId, fromAnchor, toCardId, toAnchor },
+      errors
+    };
+  });
+}
+
+function findStakeholderByCsvId(cardId) {
+  return [...canvas.querySelectorAll(".stakeholder")]
+    .find((el) => el.dataset.csvId === cardId || el.dataset.id === cardId);
+}
+
+function importRelationshipsFromCSV(text) {
+  const parsed = parseRelationshipLines(text);
+  const good = parsed.filter(p => p.errors.length === 0);
+
+  good.forEach((p) => {
+    const d = p.data;
+    const from = findStakeholderByCsvId(d.fromCardId);
+    const to = findStakeholderByCsvId(d.toCardId);
+    if (!from || !to) return;
+    addRelationship(from.dataset.id, to.dataset.id, d.fromAnchor, d.toAnchor, { toggleExisting: false });
+  });
+
+  return {
+    imported: good.length,
+    errors: parsed.filter(p => p.errors.length > 0)
+  };
 }
 
 // ---------- CSV PREVIEW ----------
@@ -1404,6 +1614,7 @@ if (ownerErrors.length === 0 && Object.keys(ownerMap).length) {
   applyOwners(ownerMap);
 }
   const parsed = parseCSVLines(csvInput.value);
+  const relationshipParsed = parseRelationshipLines(csvInput.value);
 
   if (!parsed.length) {
     csvPreviewOut.innerHTML = `<div class="bad">Nothing to import.</div>`;
@@ -1412,6 +1623,8 @@ if (ownerErrors.length === 0 && Object.keys(ownerMap).length) {
 
   const okCount = parsed.filter(p => p.errors.length === 0).length;
   const badCount = parsed.length - okCount;
+  const relOkCount = relationshipParsed.filter(p => p.errors.length === 0).length;
+  const relBadCount = relationshipParsed.length - relOkCount;
 
   const rows = parsed.slice(0, 50).map(p => {
     if (p.errors.length) {
@@ -1422,7 +1635,8 @@ if (ownerErrors.length === 0 && Object.keys(ownerMap).length) {
   }).join("");
 
   csvPreviewOut.innerHTML =
-    `<div><b>${okCount}</b> valid, <b>${badCount}</b> invalid (showing up to 50 lines)</div><br>` + rows;
+    `<div><b>${okCount}</b> stakeholders valid, <b>${badCount}</b> invalid. ` +
+    `<b>${relOkCount}</b> relationships valid, <b>${relBadCount}</b> invalid (showing up to 50 stakeholder lines)</div><br>` + rows;
 }
 
 // ---------- CSV IMPORT ----------
@@ -1489,11 +1703,14 @@ good.forEach((p) => {
     linkedin: d.linkedin,
     x: useX,
     y: useY,
-    photoUrl: d.photoUrl
+    photoUrl: d.photoUrl,
+    cardId: d.cardId
   });
 });
 
+  importRelationshipsFromCSV(csvInput.value);
   redraw();
+  scheduleAutosave();
   closeCSVPanel();
 }
 
@@ -1649,6 +1866,27 @@ function csvEscape(v) {
   return s;
 }
 
+function splitCSVLine(line) {
+  const out = [];
+  let cur = "";
+  let inQ = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { inQ = !inQ; continue; }
+    if (ch === "," && !inQ) { out.push(cur.trim()); cur = ""; continue; }
+    cur += ch;
+  }
+
+  out.push(cur.trim());
+  return out;
+}
+
+function getCardExportId(el) {
+  if (!el.dataset.csvId) el.dataset.csvId = `card-${el.dataset.id}`;
+  return el.dataset.csvId;
+}
+
 function generateCSVExport() {
   const rows = [];
 
@@ -1664,7 +1902,7 @@ function generateCSVExport() {
 
   // Stakeholders block
   rows.push("# Stakeholders");
-  rows.push(["Name","Title","Role","Influence","View","Contact","Owner","LinkedIn","X","Y","PhotoURL"].join(","));
+  rows.push(["Name","Title","Role","Influence","View","Contact","Owner","LinkedIn","X","Y","PhotoURL","CardID"].join(","));
 
   const stakeholders = [...canvas.querySelectorAll(".stakeholder")];
 
@@ -1698,10 +1936,29 @@ function generateCSVExport() {
       csvEscape(linkedin),
       csvEscape(Number.isFinite(x) ? x : ""),
       csvEscape(Number.isFinite(y) ? y : ""),
-      csvEscape(photoUrl)
+      csvEscape(photoUrl),
+      csvEscape(getCardExportId(el))
     ].join(",");
 
     rows.push(row);
+  });
+
+  rows.push("");
+  rows.push("# Relationships");
+  rows.push(["RELATIONSHIP","FromCardID","FromAnchor","ToCardID","ToAnchor"].join(","));
+
+  relationships.forEach((rel) => {
+    const from = document.querySelector(`.stakeholder[data-id="${rel.managerId}"]`);
+    const to = document.querySelector(`.stakeholder[data-id="${rel.reportId}"]`);
+    if (!from || !to) return;
+
+    rows.push([
+      "RELATIONSHIP",
+      csvEscape(getCardExportId(from)),
+      csvEscape(rel.managerAnchor || "bottom"),
+      csvEscape(getCardExportId(to)),
+      csvEscape(rel.reportAnchor || "top")
+    ].join(","));
   });
 
   csvExportOut.value = rows.join("\n");
@@ -2458,9 +2715,11 @@ function setStakeholderPhotoFromUrl(el, url) {
     const name = el.querySelector(".name")?.value || "";
     span.textContent = (name[0] || "—").toUpperCase();
     p.appendChild(span);
+    scheduleAutosave();
   };
 
   p.appendChild(img);
+  scheduleAutosave();
 }
 
 function getStakeholderBounds(elements) {
@@ -2499,6 +2758,7 @@ function clearStakeholderPhoto(el) {
     span.textContent = ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || "—";
     p.appendChild(span);
   }
+  scheduleAutosave();
 }
 
 // ---- Auto layout for imported cards (avoids overlap) ----
@@ -2558,3 +2818,6 @@ function findFreePosition(startX, startY) {
   // fallback: just return the start (should never happen)
   return { x: snap(startX), y: snap(startY) };
 }
+
+restoreMapFromAutosave();
+window.addEventListener("beforeunload", saveMapStateNow);

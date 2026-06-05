@@ -17,8 +17,9 @@
       </div>
 
       <div class="csv-help">
-        Format: <code>Name,Title,Role,Influence,View,Contact,Owner[,LinkedIn][,X][,Y]</code><br>
-        Example: <code>Jane Smith,CIO,D,H,+,M,RW,https://linkedin.com/in/janesmith,60,60</code>
+        Format: <code>Name,Title,Role,Influence,View,Contact,Owner[,LinkedIn][,X][,Y][,PhotoURL][,CardID]</code><br>
+        Relationship: <code>RELATIONSHIP,FromCardID,FromAnchor,ToCardID,ToAnchor</code><br>
+        Example: <code>Jane Smith,CIO,D,H,+,M,RW,https://linkedin.com/in/janesmith,60,60,,card-1</code>
       </div>
 <div class="csv-file-row">
   <label class="csv-file-label">
@@ -46,7 +47,7 @@
       </div>
 
       <div class="csv-help" id="csvHelp">
-        Output format: <code>Name,Title,Role,Influence,View,Contact,Owner,LinkedIn,X,Y</code>
+        Output format: <code>Name,Title,Role,Influence,View,Contact,Owner,LinkedIn,X,Y,PhotoURL,CardID</code> plus <code>RELATIONSHIP</code> rows.
       </div>
 
       <div class="csv-actions" style="justify-content: space-between;">
@@ -67,7 +68,7 @@
   <header>
     <div class="brand-title">
       <h1>Stakeholder Map</h1>
-      <span class="version-badge">v1.3</span>
+      <span class="version-badge">v1.4</span>
     </div>
     <div class="controls">
       <button id="addStakeholder">➕ Add Stakeholder</button>
