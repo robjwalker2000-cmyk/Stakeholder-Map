@@ -2819,5 +2819,99 @@ function findFreePosition(startX, startY) {
   return { x: snap(startX), y: snap(startY) };
 }
 
-restoreMapFromAutosave();
+// ---------- SHARE LINK ----------
+function encodeShareLink() {
+  const state = collectMapState();
+  // Strip photos — base64 data URLs are huge and URLs would break
+  state.stakeholders = state.stakeholders.map((s) => ({ ...s, photoUrl: "" }));
+  try {
+    const json = JSON.stringify(state);
+    // btoa needs a binary string — encode via URI component to handle unicode
+    const encoded = btoa(unescape(encodeURIComponent(json)));
+    const url = `${location.origin}${location.pathname}#map=${encoded}`;
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = document.getElementById("shareLink");
+      const orig = btn.textContent;
+      btn.textContent = "✅ Copied!";
+      setTimeout(() => (btn.textContent = orig), 2000);
+    }).catch(() => {
+      prompt("Copy this link:", url);
+    });
+  } catch (e) {
+    alert("Failed to generate share link: " + e.message);
+  }
+}
+
+function loadFromShareLink() {
+  const hash = location.hash;
+  if (!hash.startsWith("#map=")) return false;
+  const encoded = hash.slice(5);
+  if (!encoded) return false;
+  try {
+    const json = decodeURIComponent(escape(atob(encoded)));
+    const state = JSON.parse(json);
+    if (!state || !Array.isArray(state.stakeholders)) return false;
+
+    // Clear hash so a refresh doesn't keep re-loading the link
+    history.replaceState(null, "", location.pathname);
+
+    isRestoringAutosave = true;
+    try {
+      canvas.querySelectorAll(".stakeholder").forEach((e) => e.remove());
+      svg.querySelectorAll(".relationship-line, .relationship-endpoint").forEach((n) => n.remove());
+      relationships.length = 0;
+
+      if (state.owners && typeof state.owners === "object") {
+        ownersToModel(state.owners);
+      }
+
+      const idMap = {};
+      state.stakeholders.forEach((item) => {
+        const el = createStakeholderFromData({
+          name: item.name, title: item.title, role: item.role,
+          influence: item.influence, view: item.view, contact: item.contact,
+          owner: item.owner, linkedin: item.linkedin,
+          x: item.x, y: item.y, photoUrl: "", cardId: item.csvId
+        });
+        if (!el) return;
+        if (item.id) {
+          const oldId = el.dataset.id;
+          el.dataset.id = String(item.id);
+          idMap[oldId] = el.dataset.id;
+        }
+        if (Number.isFinite(Number(item.zIndex))) el.style.zIndex = String(item.zIndex);
+      });
+
+      nextId = Math.max(
+        Number(state.nextId) || 1,
+        ...[...canvas.querySelectorAll(".stakeholder")].map((el) => Number(el.dataset.id) + 1).filter(Number.isFinite)
+      );
+      zIndex = Math.max(Number(state.zIndex) || 1, nextId);
+      showLinkedInUrl = !!state.showLinkedInUrl;
+      updateLinkedInVisibility();
+
+      (state.relationships || []).forEach((rel) => {
+        const managerId = idMap[rel.managerId] || rel.managerId;
+        const reportId = idMap[rel.reportId] || rel.reportId;
+        if (!managerId || !reportId) return;
+        addRelationship(managerId, reportId, rel.managerAnchor || "bottom", rel.reportAnchor || "top", { toggleExisting: false });
+      });
+
+      redraw();
+    } finally {
+      isRestoringAutosave = false;
+    }
+    return true;
+  } catch (e) {
+    console.warn("Failed to load share link:", e);
+    return false;
+  }
+}
+
+document.getElementById("shareLink").onclick = encodeShareLink;
+
+// On load: share link takes priority over autosave
+if (!loadFromShareLink()) {
+  restoreMapFromAutosave();
+}
 window.addEventListener("beforeunload", saveMapStateNow);
