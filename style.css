@@ -639,6 +639,32 @@ header h1 {
   cursor: pointer;
 }
 
+.owner-add-row{
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.owner-add-btn{
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.18);
+  background: #fff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #555;
+  transition: background 0.15s;
+}
+
+.owner-add-btn:hover{
+  background: #f0f0f0;
+}
+
 .owners-hint{
   margin-top: 8px;
   font-size: 12px;
