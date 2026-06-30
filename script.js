@@ -152,7 +152,7 @@ function colorClass(type, val) {
   if (type === "role") return "green";
 
   // ✅ Optional: if you want Owner "-" to be white too (you asked this earlier)
-  if (type === "owner" && val === "-") return "white";
+  if (type === "owner" && val === "") return "white";
   if (type === "owner") return "green";
 
   if (type === "influence") return val === "H" ? "green" : val === "M" ? "amber" : "red";
@@ -504,7 +504,7 @@ function createStakeholder(x, y) {
       ${statusBox(["H", "M", "L"], "influence", false)}
       ${statusBox(["+", "0", "-"], "view", false)}
       ${statusBox(["H", "M", "L", "N"], "contact", false)}
-      ${statusBox(OWNER_VALUES, "owner", true)}
+      ${statusBox([...OWNER_VALUES, ""], "owner", true)}
     </div>
     ${connectionAnchors()}
   `;
@@ -616,6 +616,12 @@ function enableStatus(el) {
       const vals = JSON.parse(b.dataset.values || "[]");
       if (!vals.length) return;
 
+      // Sync idx to current displayed value on first interaction
+      if (idx === -1) {
+        const cur = vals.indexOf(b.textContent.trim());
+        if (cur !== -1) idx = cur;
+      }
+
       idx = (idx + 1) % vals.length;
       const v = vals[idx];
 
@@ -624,8 +630,9 @@ function enableStatus(el) {
       // Special white cases
       if (
         (b.dataset.type === "role" && v === "T") ||
-        (b.dataset.type === "owner" && v === "-")
+        (b.dataset.type === "owner" && v === "")
       ) {
+        b.textContent = "";
         b.className = "status-box white";
         scheduleAutosave();
         return;
@@ -701,6 +708,15 @@ function enableClick(el) {
       completeConnectionTo(el, selectedConnectionStart ? "top" : "bottom");
       return;
     }
+
+    // Status boxes, photo, inputs and links handle their own clicks
+    if (
+      e.target.closest(".status-box") ||
+      e.target.closest(".photo") ||
+      e.target.closest("input") ||
+      e.target.closest("a") ||
+      e.target.closest(".connection-anchor")
+    ) return;
 
     updateHovercard(el);
     positionHovercard(el);
@@ -995,7 +1011,7 @@ function normalizeOwnerCode(code) {
 
 function refreshOwnerStatusValues() {
   document.querySelectorAll('.status-box[data-type="owner"]').forEach((box) => {
-    box.dataset.values = JSON.stringify(OWNER_VALUES);
+    box.dataset.values = JSON.stringify([...OWNER_VALUES, ""]);
 
     // If current selection isn't in new allowed list, clear it
     if (box.textContent && !OWNER_VALUES.includes(box.textContent)) {
@@ -1106,7 +1122,42 @@ function renderOwnersPanel() {
     `;
   }).join("");
 
-  // wire events
+  // + add row at the bottom
+  const addRow = document.createElement("div");
+  addRow.className = "owner-add-row";
+  addRow.innerHTML = `<button class="owner-add-btn" title="Add owner">+</button>`;
+  addRow.querySelector(".owner-add-btn").addEventListener("click", () => {
+    addRow.remove();
+    const newRow = document.createElement("div");
+    newRow.className = "owner-row owner-row--new";
+    newRow.dataset.code = "";
+    newRow.innerHTML = `
+      <input class="owner-code" placeholder="Code" />
+      <input class="owner-label" placeholder="Label" />
+      <button class="owner-del" title="Delete owner">🗑️</button>
+    `;
+    ownersList.appendChild(newRow);
+    ownersList.appendChild(addRow);
+    const codeInput = newRow.querySelector(".owner-code");
+    const labelInput = newRow.querySelector(".owner-label");
+    codeInput.focus();
+
+    function commitNewRow() {
+      const code = normalizeOwnerCode(codeInput.value);
+      if (!code) return;
+      const label = String(labelInput.value || "").trim() || code;
+      const current = getOwnersModel();
+      current[code] = label;
+      ownersToModel(current);
+    }
+
+    labelInput.addEventListener("blur", commitNewRow);
+
+    newRow.querySelector(".owner-del").addEventListener("click", () => newRow.remove());
+  });
+  ownersList.appendChild(addRow);
+
+  // wire events for existing rows
   ownersList.querySelectorAll(".owner-row").forEach(row => {
     const codeInput = row.querySelector(".owner-code");
     const labelInput = row.querySelector(".owner-label");
@@ -1121,14 +1172,12 @@ function renderOwnersPanel() {
 
       const current = getOwnersModel();
 
-      // If code changed, move it
       if (oldCode && oldCode !== newCode) delete current[oldCode];
 
       current[newCode] = newLabel;
 
       ownersToModel(current);
 
-      // IMPORTANT: if code changed, update any existing stakeholders using the old code
       if (oldCode && oldCode !== newCode) {
         document.querySelectorAll('.status-box[data-type="owner"]').forEach(box => {
           if (box.textContent === oldCode) {
@@ -1144,25 +1193,11 @@ function renderOwnersPanel() {
     delBtn.addEventListener("click", () => {
       const code = row.dataset.code;
       if (!code) return;
-      if (!confirm(`Delete owner ${code}?`)) return;
-
       const current = getOwnersModel();
       delete current[code];
       ownersToModel(current);
     });
   });
-}
-
-if (ownersAddBtn) {
-  ownersAddBtn.onclick = () => {
-    const code = normalizeOwnerCode(prompt("Owner code (e.g. RW):", "RW") || "");
-    if (!code) return;
-    const label = String(prompt("Owner label (e.g. Rob Walker):", code) || "").trim() || code;
-
-    const current = getOwnersModel();
-    current[code] = label;
-    ownersToModel(current);
-  };
 }
 
 if (ownersImportBtn) {
@@ -1380,7 +1415,8 @@ function setStatus(stakeholderEl, type, value) {
   box.textContent = v;
 
   // ✅ Force white for special values (works for import + manual set)
-  if ((type === "role" && v === "T") || (type === "owner" && v === "-")) {
+  if ((type === "role" && v === "T") || (type === "owner" && v === "")) {
+    box.textContent = "";
     box.className = "status-box white";
     return;
   }
@@ -1445,6 +1481,7 @@ function createStakeholderFromData(data) {
     initials?.remove();
     oldImg?.remove();
     photoDiv.appendChild(img);
+    el.dataset.photo = data.photoUrl;
   }
 
   // statuses
