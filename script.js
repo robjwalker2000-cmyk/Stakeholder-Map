@@ -956,6 +956,10 @@ function enableStakeholderContextMenu(el) {
         🖼️ Set photo URL…
       </button>
 
+      <button id="stakeAdjustPhotoBtn" style="width:100%; padding:8px 10px; cursor:pointer; text-align:left; ${hasPhoto ? "" : "opacity:.5;"}">
+        🎛️ Adjust photo…
+      </button>
+
       <button id="stakeClearPhotoBtn" style="width:100%; padding:8px 10px; cursor:pointer; text-align:left; ${hasPhoto ? "" : "opacity:.5;"}">
         ❌ Clear photo
       </button>
@@ -990,6 +994,12 @@ function enableStakeholderContextMenu(el) {
 
       setStakeholderPhotoFromUrl(el, clean);
       hideStakeMenu();
+    };
+
+    stakeMenu.querySelector("#stakeAdjustPhotoBtn").onclick = () => {
+      if (!hasPhoto) return;
+      hideStakeMenu();
+      openPhotoAdjust(el);
     };
 
     stakeMenu.querySelector("#stakeClearPhotoBtn").onclick = () => {
@@ -2776,6 +2786,129 @@ function getStakeholderBounds(elements) {
   });
 
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+function openPhotoAdjust(el) {
+  const srcImg = el.querySelector(".photo img");
+  if (!srcImg) return;
+
+  const PREVIEW = 220;
+  let scale = 1, dx = 0, dy = 0;
+  let dragging = false, lastX = 0, lastY = 0;
+  let baseScale = 1;
+
+  const modal = document.createElement("div");
+  modal.id = "photoAdjustModal";
+  modal.innerHTML = `
+    <div class="photo-adjust-inner">
+      <h3 class="photo-adjust-title">Adjust Photo</h3>
+      <div class="photo-adjust-clip" style="width:${PREVIEW}px;height:${PREVIEW}px;">
+        <img class="photo-adjust-img" src="${srcImg.src}" crossorigin="anonymous" draggable="false" />
+      </div>
+      <div class="photo-adjust-zoom-row">
+        <span>🔍</span>
+        <input type="range" class="photo-adjust-slider" min="0.5" max="4" step="0.01" value="1" />
+        <span class="photo-adjust-zoom-label">100%</span>
+      </div>
+      <div class="photo-adjust-actions">
+        <button class="photo-adjust-cancel">Cancel</button>
+        <button class="photo-adjust-save">Save</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const clip    = modal.querySelector(".photo-adjust-clip");
+  const adjImg  = modal.querySelector(".photo-adjust-img");
+  const slider  = modal.querySelector(".photo-adjust-slider");
+  const label   = modal.querySelector(".photo-adjust-zoom-label");
+
+  function render() {
+    const rw = adjImg.naturalWidth  * baseScale * scale;
+    const rh = adjImg.naturalHeight * baseScale * scale;
+    adjImg.style.width  = rw + "px";
+    adjImg.style.height = rh + "px";
+    adjImg.style.left   = (PREVIEW - rw) / 2 + dx + "px";
+    adjImg.style.top    = (PREVIEW - rh) / 2 + dy + "px";
+  }
+
+  function init() {
+    baseScale = Math.max(PREVIEW / adjImg.naturalWidth, PREVIEW / adjImg.naturalHeight);
+    render();
+  }
+
+  if (adjImg.complete && adjImg.naturalWidth) init();
+  else adjImg.onload = init;
+
+  clip.addEventListener("mousedown", (e) => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+    clip.style.cursor = "grabbing";
+    e.preventDefault();
+  });
+
+  function onMove(e) {
+    if (!dragging) return;
+    dx += e.clientX - lastX; dy += e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    render();
+  }
+  function onUp() { dragging = false; clip.style.cursor = "grab"; }
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup",   onUp);
+
+  clip.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    scale = Math.max(0.5, Math.min(4, scale - e.deltaY * 0.001));
+    slider.value = scale;
+    label.textContent = Math.round(scale * 100) + "%";
+    render();
+  }, { passive: false });
+
+  slider.addEventListener("input", () => {
+    scale = parseFloat(slider.value);
+    label.textContent = Math.round(scale * 100) + "%";
+    render();
+  });
+
+  function cleanup() {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup",   onUp);
+    modal.remove();
+  }
+
+  modal.querySelector(".photo-adjust-cancel").onclick = cleanup;
+
+  modal.querySelector(".photo-adjust-save").onclick = () => {
+    const OUT = 400;
+    const ratio = OUT / PREVIEW;
+    const canvasBaseScale = Math.max(OUT / adjImg.naturalWidth, OUT / adjImg.naturalHeight);
+    const rw = adjImg.naturalWidth  * canvasBaseScale * scale;
+    const rh = adjImg.naturalHeight * canvasBaseScale * scale;
+    const rx = (OUT - rw) / 2 + dx * ratio;
+    const ry = (OUT - rh) / 2 + dy * ratio;
+
+    const cv  = document.createElement("canvas");
+    cv.width  = OUT; cv.height = OUT;
+    const ctx = cv.getContext("2d");
+    ctx.beginPath();
+    ctx.arc(OUT / 2, OUT / 2, OUT / 2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(adjImg, rx, ry, rw, rh);
+
+    const dataUrl = cv.toDataURL("image/jpeg", 0.92);
+
+    const photoDiv = el.querySelector(".photo");
+    let cardImg = photoDiv.querySelector("img");
+    if (!cardImg) {
+      photoDiv.querySelector(".initials")?.remove();
+      cardImg = document.createElement("img");
+      photoDiv.appendChild(cardImg);
+    }
+    cardImg.src = dataUrl;
+    el.dataset.photo = dataUrl;
+    scheduleAutosave();
+    cleanup();
+  };
 }
 
 function clearStakeholderPhoto(el) {
