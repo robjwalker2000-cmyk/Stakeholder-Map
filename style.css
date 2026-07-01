@@ -639,6 +639,88 @@ header h1 {
   cursor: pointer;
 }
 
+/* ---------- Photo adjust modal ---------- */
+#photoAdjustModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo-adjust-inner {
+  background: #fff;
+  border-radius: 18px;
+  padding: 20px;
+  width: 280px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+}
+
+.photo-adjust-title {
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.photo-adjust-clip {
+  border-radius: 50%;
+  overflow: hidden;
+  position: relative;
+  margin: 0 auto 14px;
+  cursor: grab;
+  background: #ddd;
+  user-select: none;
+}
+
+.photo-adjust-img {
+  position: absolute;
+  pointer-events: none;
+}
+
+.photo-adjust-zoom-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.photo-adjust-slider {
+  flex: 1;
+}
+
+.photo-adjust-zoom-label {
+  font-size: 12px;
+  width: 36px;
+  text-align: right;
+  color: var(--muted);
+}
+
+.photo-adjust-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.photo-adjust-actions button {
+  padding: 8px 18px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.photo-adjust-save {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+}
+
+.photo-adjust-cancel {
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.18);
+}
+
 .owner-add-row{
   display: flex;
   justify-content: center;
