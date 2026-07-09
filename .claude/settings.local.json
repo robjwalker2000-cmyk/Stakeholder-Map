@@ -10,7 +10,10 @@
       "Read(//Users/rob/Downloads/**)",
       "Bash(grep -c '`' /Users/rob/Documents/GitHub/Mini/Stakeholder-Map/style.css)",
       "Bash(grep -n '\\\\${' /Users/rob/Documents/GitHub/Mini/Stakeholder-Map/style.css)",
-      "Bash(node --check /Users/rob/Documents/GitHub/Mini/Stakeholder-Map/script.js)"
+      "Bash(node --check /Users/rob/Documents/GitHub/Mini/Stakeholder-Map/script.js)",
+      "Bash(curl -s \"https://robjwalker2000-cmyk.github.io/Stakeholder-Map/script.js\" -o /tmp/deployed_script.js -w \"HTTP %{http_code}, size %{size_download}\\\\n\")",
+      "Bash(curl -s \"https://robjwalker2000-cmyk.github.io/Stakeholder-Map/index.html\" -o /tmp/deployed_index.html -w \"HTTP %{http_code}, size %{size_download}\\\\n\")",
+      "Read(//tmp/**)"
     ]
   }
 }
