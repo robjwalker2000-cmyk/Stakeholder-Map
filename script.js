@@ -444,6 +444,16 @@ function getStakeholderNameById(id) {
   return el?.querySelector(".name")?.value || "Unnamed";
 }
 
+function getReportsToNames(el) {
+  const id = el.dataset.id;
+  return relationships.filter((r) => r.reportId === id).map((r) => getStakeholderNameById(r.managerId));
+}
+
+function getDirectReportNames(el) {
+  const id = el.dataset.id;
+  return relationships.filter((r) => r.managerId === id).map((r) => getStakeholderNameById(r.reportId));
+}
+
 function deleteRelationshipById(id) {
   const index = relationships.findIndex((rel) => rel.id === id);
   if (index === -1) return;
@@ -973,9 +983,10 @@ function updateHovercard(el) {
     hovercard.querySelector(".hc-top").appendChild(a);
   }
 
-  // Optional: you can populate reports-to/direct-reports later if you want
-  hcReportsTo.textContent = "—";
-  hcDirectReports.textContent = "—";
+  const reportsTo = getReportsToNames(el);
+  const directReports = getDirectReportNames(el);
+  hcReportsTo.textContent = reportsTo.length ? reportsTo.join(", ") : "—";
+  hcDirectReports.textContent = directReports.length ? directReports.join(", ") : "—";
 }
 
 function positionHovercard(el) {
@@ -3323,12 +3334,29 @@ function buildFitToViewportScript() {
 <\/script>`;
 }
 
-function buildHovercardScript(mapsJson, linkedInIconSrc) {
+function buildHovercardScript(mapsJson, linkedInIconSrc, relationshipsJson) {
   return `<script>
 (function(){
   var root = document.querySelector(".export-canvas");
   var hovercard = document.getElementById("hovercard");
   if (!root || !hovercard) return;
+
+  var relationships = ${relationshipsJson};
+
+  function getStakeholderNameById(id) {
+    var card = root.querySelector('.stakeholder[data-id="' + id + '"]');
+    return card ? (cardText(card, ".name") || "Unnamed") : "Unnamed";
+  }
+
+  function getReportsToNames(el) {
+    var id = el.dataset.id;
+    return relationships.filter(function (r) { return r.reportId === id; }).map(function (r) { return getStakeholderNameById(r.managerId); });
+  }
+
+  function getDirectReportNames(el) {
+    var id = el.dataset.id;
+    return relationships.filter(function (r) { return r.managerId === id; }).map(function (r) { return getStakeholderNameById(r.reportId); });
+  }
 
   var hcAvatar = document.getElementById("hcAvatar");
   var hcName = document.getElementById("hcName");
@@ -3421,8 +3449,10 @@ function buildHovercardScript(mapsJson, linkedInIconSrc) {
       if (top) top.appendChild(a);
     }
 
-    hcReportsTo.textContent = "\\u2014";
-    hcDirectReports.textContent = "\\u2014";
+    var reportsTo = getReportsToNames(el);
+    var directReports = getDirectReportNames(el);
+    hcReportsTo.textContent = reportsTo.length ? reportsTo.join(", ") : "\\u2014";
+    hcDirectReports.textContent = directReports.length ? directReports.join(", ") : "\\u2014";
   }
 
   function positionHovercard(el) {
@@ -3509,7 +3539,8 @@ async function exportToFullHTML() {
     const css = await getExportCss();
     const LINKEDIN_ICON_URL = "https://cdn-icons-png.flaticon.com/512/174/174857.png";
     const linkedInIconSrc = (await tryGetImageDataUrl(LINKEDIN_ICON_URL)) || LINKEDIN_ICON_URL;
-    const hovercardScript = buildHovercardScript(JSON.stringify(maps), linkedInIconSrc);
+    const relationshipsForExport = relationships.map((r) => ({ managerId: r.managerId, reportId: r.reportId }));
+    const hovercardScript = buildHovercardScript(JSON.stringify(maps), linkedInIconSrc, JSON.stringify(relationshipsForExport));
     const fitToViewportScript = buildFitToViewportScript();
     const html = `<!DOCTYPE html>
 <html lang="en">
