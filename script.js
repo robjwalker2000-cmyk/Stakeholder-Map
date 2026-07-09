@@ -2036,8 +2036,11 @@ async function tryGetImageDataUrl(src) {
   // blob: from file uploads can't be fetched reliably; skip
   if (/^blob:/i.test(src)) return null;
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
   try {
-    const res = await fetch(src, { mode: "cors" });
+    const res = await fetch(src, { mode: "cors", signal: controller.signal });
     const blob = await res.blob();
     return await new Promise((r) => {
       const fr = new FileReader();
@@ -2046,6 +2049,8 @@ async function tryGetImageDataUrl(src) {
     });
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -2155,14 +2160,23 @@ function syncClonedFormValues(source, clone) {
 function waitForSnapshotImages(root) {
   const images = [...root.querySelectorAll("img")];
   return Promise.all(images.map((img) => {
-    if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+    // img.complete is true once loading has settled, whether it succeeded or
+    // already failed — in the failure case onerror already fired and attaching
+    // a new handler below would never resolve, hanging the export forever.
+    if (img.complete) {
+      if (img.naturalWidth === 0) img.remove();
+      return Promise.resolve();
+    }
 
     return new Promise((resolve) => {
-      img.onload = () => resolve();
+      const done = () => resolve();
+      img.onload = done;
       img.onerror = () => {
         img.remove();
-        resolve();
+        done();
       };
+      // Safety net: never let one slow/hanging image block the whole export.
+      setTimeout(done, 8000);
     });
   }));
 }
