@@ -13,6 +13,26 @@ const relMenu = document.getElementById("relMenu");
 const importOwnersBtn = document.getElementById("importOwners");
 const csvHelp = document.getElementById("csvHelp");
 
+// Import/Export dropdown menu
+const importExportMenuBtn = document.getElementById("importExportMenuBtn");
+const importExportMenu = document.getElementById("importExportMenu");
+function hideImportExportMenu() {
+  if (!importExportMenu) return;
+  importExportMenu.classList.remove("show");
+  importExportMenu.setAttribute("aria-hidden", "true");
+}
+if (importExportMenuBtn && importExportMenu) {
+  importExportMenuBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const willShow = !importExportMenu.classList.contains("show");
+    importExportMenu.classList.toggle("show", willShow);
+    importExportMenu.setAttribute("aria-hidden", String(!willShow));
+  });
+  importExportMenu.addEventListener("click", (e) => {
+    if (e.target.closest("button")) hideImportExportMenu();
+  });
+}
+
 // Stakeholder context menu (right-click)
 const stakeMenu = document.getElementById("stakeMenu");
 let selectedStakeholderForMenu = null;
@@ -65,6 +85,22 @@ let selectedManager = null;
 let selectedConnectionStart = null;
 let selectedRelationshipId = null;
 let showLinkedInUrl = localStorage.getItem("showLinkedInUrl") === "true";
+const multiSelected = new Set();
+
+function toggleMultiSelect(el) {
+  if (multiSelected.has(el)) {
+    multiSelected.delete(el);
+    el.classList.remove("multi-selected");
+  } else {
+    multiSelected.add(el);
+    el.classList.add("multi-selected");
+  }
+}
+
+function clearMultiSelect() {
+  multiSelected.forEach((el) => el.classList.remove("multi-selected"));
+  multiSelected.clear();
+}
 const GRID = 20;
 const relationships = [];
 const AUTOSAVE_KEY = "stakeholderMapAutosave:v1";
@@ -466,12 +502,15 @@ document.addEventListener("click", (e) => {
   const insideHover = e.target.closest("#hovercard");
   const insideRel = e.target.closest("#relMenu");
   const insideStakeMenu = e.target.closest("#stakeMenu");
+  const insideImportExportMenu = e.target.closest(".menu-dropdown");
 
   if (!insideStake && !insideHover && !insideRel && !insideStakeMenu) {
     hideHovercard();
     hideRelMenu();
     hideStakeMenu();
   }
+  if (!insideStake && multiSelected.size) clearMultiSelect();
+  if (!insideImportExportMenu) hideImportExportMenu();
 });
 
 // ---------- CREATE STAKEHOLDER ----------
@@ -542,25 +581,49 @@ function enableLinkedIn(el) {
 // ---------- DRAG ----------
 function enableDrag(el) {
   let drag = false, ox = 0, oy = 0;
+  let groupStart = null; // Map(cardEl -> {left, top}) when dragging a multi-selection
+  let groupOriginX = 0, groupOriginY = 0;
 
   el.addEventListener("mousedown", (e) => {
     if (e.target.closest("input") || e.target.closest("a") || e.target.closest(".status-box") || e.target.closest(".connection-anchor")) return;
+    if (e.shiftKey) return; // shift+click toggles selection instead of dragging
     drag = true;
-    ox = e.clientX - el.offsetLeft;
-    oy = e.clientY - el.offsetTop;
     el.style.zIndex = zIndex++;
+
+    if (multiSelected.has(el)) {
+      groupOriginX = e.clientX;
+      groupOriginY = e.clientY;
+      groupStart = new Map();
+      multiSelected.forEach((card) => {
+        groupStart.set(card, { left: card.offsetLeft, top: card.offsetTop });
+      });
+    } else {
+      groupStart = null;
+      ox = e.clientX - el.offsetLeft;
+      oy = e.clientY - el.offsetTop;
+    }
   });
 
   document.addEventListener("mousemove", (e) => {
     if (!drag) return;
-    el.style.left = snap(e.clientX - ox) + "px";
-    el.style.top = snap(e.clientY - oy) + "px";
+    if (groupStart) {
+      const dx = e.clientX - groupOriginX;
+      const dy = e.clientY - groupOriginY;
+      groupStart.forEach((pos, card) => {
+        card.style.left = snap(pos.left + dx) + "px";
+        card.style.top = snap(pos.top + dy) + "px";
+      });
+    } else {
+      el.style.left = snap(e.clientX - ox) + "px";
+      el.style.top = snap(e.clientY - oy) + "px";
+    }
     updateLines();
   });
 
   document.addEventListener("mouseup", () => {
     if (!drag) return;
     drag = false;
+    groupStart = null;
     scheduleAutosave();
   });
 }
@@ -717,6 +780,13 @@ function enableClick(el) {
       e.target.closest("a") ||
       e.target.closest(".connection-anchor")
     ) return;
+
+    if (e.shiftKey) {
+      toggleMultiSelect(el);
+      return;
+    }
+
+    if (multiSelected.size) clearMultiSelect();
 
     updateHovercard(el);
     positionHovercard(el);
@@ -930,6 +1000,7 @@ function deleteStakeholder(el) {
     }
   }
 
+  multiSelected.delete(el);
   el.remove();
   redraw();
 
@@ -1355,6 +1426,7 @@ function clearAll() {
   svg.querySelectorAll(".relationship-line, .relationship-endpoint").forEach((node) => node.remove());
   relationships.length = 0;
   relationshipMode = false;
+  multiSelected.clear();
   clearSelectedManager();
   linkBtn.style.background = "";
   hideHovercard();
@@ -3180,6 +3252,7 @@ async function embedImagesAsDataUrls(root) {
 function createFullExportSurface(stakeholders, bounds) {
   const padding = 40;
   const surface = document.createElement("div");
+  surface.classList.add("export-surface");
   surface.style.position = "relative";
   surface.style.width = bounds.w + padding * 2 + "px";
   surface.style.height = bounds.h + padding * 2 + "px";
@@ -3214,6 +3287,40 @@ function createFullExportSurface(stakeholders, bounds) {
   syncClonedRelationshipLines(canvasClone);
   surface.appendChild(canvasClone);
   return surface;
+}
+
+function buildFitToViewportScript() {
+  return `<script>
+(function(){
+  var surface = document.querySelector(".export-surface");
+  if (!surface) return;
+
+  var naturalW = surface.offsetWidth;
+  var naturalH = surface.offsetHeight;
+
+  var sizer = document.createElement("div");
+  sizer.style.position = "relative";
+  sizer.style.overflow = "hidden";
+  sizer.style.flex = "none";
+  surface.parentNode.insertBefore(sizer, surface);
+  sizer.appendChild(surface);
+  surface.style.transformOrigin = "top left";
+
+  function applyFit() {
+    var padding = 48;
+    var maxW = Math.max(window.innerWidth - padding, 50);
+    var maxH = Math.max(window.innerHeight - padding, 50);
+    var scale = Math.min(maxW / naturalW, maxH / naturalH, 1);
+    if (!isFinite(scale) || scale <= 0) scale = 1;
+    surface.style.transform = "scale(" + scale + ")";
+    sizer.style.width = (naturalW * scale) + "px";
+    sizer.style.height = (naturalH * scale) + "px";
+  }
+
+  applyFit();
+  window.addEventListener("resize", applyFit);
+})();
+<\/script>`;
 }
 
 function buildHovercardScript(mapsJson, linkedInIconSrc) {
@@ -3321,8 +3428,21 @@ function buildHovercardScript(mapsJson, linkedInIconSrc) {
   function positionHovercard(el) {
     var cr = root.getBoundingClientRect();
     var sr = el.getBoundingClientRect();
-    hovercard.style.left = (sr.right - cr.left + 12) + "px";
-    hovercard.style.top = (sr.top - cr.top) + "px";
+    // cr/sr are in screen pixels, which include any fit-to-viewport scale
+    // applied to an ancestor; left/top are relative to root's own unscaled
+    // coordinate space, so the screen-space delta must be un-scaled first.
+    var scale = (root.offsetWidth ? cr.width / root.offsetWidth : 1) || 1;
+
+    // Flip to the card's left side once it's past screen mid-width, so the
+    // popup doesn't run off the right edge for cards on the right half.
+    var placeOnLeft = (sr.left + sr.width / 2) > window.innerWidth / 2;
+    var hcWidthLocal = hovercard.offsetWidth || 340;
+    var left = placeOnLeft
+      ? (sr.left - cr.left) / scale - hcWidthLocal - 12
+      : (sr.right - cr.left) / scale + 12;
+
+    hovercard.style.left = Math.max(0, left) + "px";
+    hovercard.style.top = ((sr.top - cr.top) / scale) + "px";
   }
 
   root.querySelectorAll(".stakeholder").forEach(function (card) {
@@ -3390,19 +3510,22 @@ async function exportToFullHTML() {
     const LINKEDIN_ICON_URL = "https://cdn-icons-png.flaticon.com/512/174/174857.png";
     const linkedInIconSrc = (await tryGetImageDataUrl(LINKEDIN_ICON_URL)) || LINKEDIN_ICON_URL;
     const hovercardScript = buildHovercardScript(JSON.stringify(maps), linkedInIconSrc);
+    const fitToViewportScript = buildFitToViewportScript();
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <title>Stakeholder Map</title>
 <style>
-body { margin: 0; font-family: Arial, sans-serif; background: #f4f6f8; }
-.export-wrap { display: flex; justify-content: center; padding: 24px; }
+html, body { margin: 0; height: 100%; font-family: Arial, sans-serif; background: #f4f6f8; }
+.export-wrap { display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 24px; box-sizing: border-box; }
+.export-surface { flex: none; }
 ${css}
 </style>
 </head>
 <body>
 <div class="export-wrap">${surface.outerHTML}</div>
+${fitToViewportScript}
 ${hovercardScript}
 </body>
 </html>`;

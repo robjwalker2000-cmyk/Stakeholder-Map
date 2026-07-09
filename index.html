@@ -68,22 +68,26 @@
   <header>
     <div class="brand-title">
       <h1>Stakeholder Map</h1>
-      <span class="version-badge">v1.8</span>
+      <span class="version-badge">v1.9</span>
     </div>
     <div class="controls">
       <button id="addStakeholder">➕ Add Stakeholder</button>
       <button id="linkMode">🔗 Reporting Mode</button>
 <!--  <button id="exportPDF">⬇️ Download PDF</button>  -->
-     
-      <button id="exportPPTX">📊 Export PowerPoint</button>
-      <button id="exportPPTXa">📊 Beta PowerPoint</button>
-      <button id="exportFullHTML">📄 Export Full HTML</button>
+      <div class="menu-dropdown">
+        <button id="importExportMenuBtn" type="button">📁 Import/Export ▾</button>
+        <div id="importExportMenu" class="dropdown-menu" aria-hidden="true">
+          <button id="importCSV">📥 Import CSV</button>
+          <button id="exportCSV">📤 Export CSV</button>
+          <button id="exportPPTX">📊 Export PowerPoint</button>
+          <button id="exportPPTXa">📊 Beta PowerPoint</button>
+          <button id="exportFullHTML">📄 Export Full HTML</button>
+          <button id="shareLink">🔗 Share Link</button>
+        </div>
+      </div>
       <button id="resetMap">🔄 Reset</button>
-      <button id="importCSV">📥 Import CSV</button>
-      <button id="exportCSV">📤 Export CSV</button>
       <button id="toggleLinkedIn">🔗 Show LinkedIn URL</button>
       <button id="toggleOwners">👥 Show/Hide Owners</button>
-      <button id="shareLink">🔗 Share Link</button>
     </div>
   </header>
 <!-- Owners Panel -->
