@@ -15,6 +15,7 @@ Works now:
 - Import/export CSV, including stakeholder records, owner rows, card IDs, relationship rows, and anchor points.
 - Export normal PowerPoint as a canvas image.
 - Export beta PowerPoint as editable PowerPoint elements with relationship lines.
+- Export a self-contained HTML snapshot of the map (static cards, embedded CSS/images, and a click-to-open info popup), downloadable via "Export Full HTML".
 - Autosave the map to browser localStorage and restore it until reset.
 - Generate/share a URL hash containing the map state.
 
