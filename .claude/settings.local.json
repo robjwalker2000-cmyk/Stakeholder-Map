@@ -3,7 +3,14 @@
     "allow": [
       "mcp__Claude_Preview__preview_start",
       "Bash(npx --version)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(node --check script.js)",
+      "Bash(python3 -c ' *)",
+      "Bash(base64 -D -i /private/tmp/claude-501/-Users-rob-Documents-GitHub-Mini-Stakeholder-Map/394ddd27-eeab-4c2a-94ed-648ad5ff4bfa/scratchpad/b64.txt -o /private/tmp/claude-501/-Users-rob-Documents-GitHub-Mini-Stakeholder-Map/394ddd27-eeab-4c2a-94ed-648ad5ff4bfa/scratchpad/exported-map.html)",
+      "Read(//Users/rob/Downloads/**)",
+      "Bash(grep -c '`' /Users/rob/Documents/GitHub/Mini/Stakeholder-Map/style.css)",
+      "Bash(grep -n '\\\\${' /Users/rob/Documents/GitHub/Mini/Stakeholder-Map/style.css)",
+      "Bash(node --check /Users/rob/Documents/GitHub/Mini/Stakeholder-Map/script.js)"
     ]
   }
 }

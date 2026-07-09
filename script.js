@@ -2354,6 +2354,1052 @@ async function exportToPPTX() {
     alert("PowerPoint export failed:\n\n" + (err?.message || err));
   }
 }
+
+// ---------- EXPORT FULL HTML ----------
+const exportFullHTMLBtn = document.getElementById("exportFullHTML");
+if (exportFullHTMLBtn) exportFullHTMLBtn.onclick = exportToFullHTML;
+
+// Bundled copy of style.css used when the page can't read its own stylesheet at
+// export time (e.g. some browsers block CSSOM/fetch access to file:// resources).
+const FALLBACK_STYLESHEET_CSS = `
+:root {
+  --green: #19c463;
+  --yellow: #f2c230;
+  --red: #ef4444;
+
+  --ink: #111;
+  --muted: #4b5563;
+  --shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f4f6f8;
+  color: var(--ink);
+}
+
+header {
+  background: #1f2937;
+  color: #fff;
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.brand-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.version-badge {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.controls button {
+  margin-left: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+#canvas {
+  position: relative;
+  height: calc(100vh - 56px);
+  background: #ffffff;
+  overflow: auto;
+}
+
+#lines {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+}
+
+#lines line {
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.relationship-endpoint {
+  fill: #fff;
+  stroke: #111;
+  stroke-width: 2;
+  cursor: pointer;
+  pointer-events: all;
+}
+
+.relationship-endpoint:hover {
+  fill: #fee2e2;
+  stroke: #b91c1c;
+}
+
+.relationship-endpoint.hidden {
+  display: none;
+}
+
+/* FIXED STAKEHOLDER CARD WIDTH */
+.stakeholder {
+  width: 340px !important;
+  position: absolute;
+  background: #fff;
+  border: 2px solid #111;
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  cursor: move;
+  user-select: none;
+  font-size: 14px;
+}
+
+.stakeholder.selecting {
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.28), var(--shadow);
+}
+
+.connection-anchor {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 2px solid #111;
+  border-radius: 999px;
+  background: #fff;
+  cursor: crosshair;
+  z-index: 5;
+}
+
+.connection-anchor:hover,
+.connection-anchor.active {
+  background: #22c55e;
+  border-color: #14532d;
+}
+
+.connection-anchor.active {
+  box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.26);
+}
+
+.anchor-top {
+  left: 50%;
+  top: -10px;
+  transform: translateX(-50%);
+}
+
+.anchor-right {
+  right: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.anchor-bottom {
+  left: 50%;
+  bottom: -10px;
+  transform: translateX(-50%);
+}
+
+.anchor-left {
+  left: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.stakeholder-header {
+  display: flex;
+  gap: 10px;
+  padding: 12px 12px 10px;
+  align-items: center;
+}
+
+.photo {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #e9e7ff, #d7d4ff);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+}
+
+.photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.meta {
+  flex: 1;
+  min-width: 0;
+}
+
+/* NAME TEXT BOLD */
+.stakeholder-header input.name {
+  font-weight: 700; /* Bold */
+  color: #000;
+}
+
+/* OTHER INPUTS */
+.stakeholder-header input {
+  width: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: #000;
+}
+
+.titleInput,
+.linkedinInput {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.linkedinDisplay {
+  display: block;
+  width: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff;
+  color: #2563eb;
+  font-size: 13px;
+  line-height: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.linkedinDisplay:hover {
+  text-decoration: underline;
+}
+
+/* Divider */
+.divider {
+  height: 1px;
+  background: #111;
+  opacity: 0.15;
+}
+
+/* Status row */
+.status-row {
+  display: flex;
+  border-top: 1px solid rgba(0, 0, 0, 0.18);
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.status-box {
+  flex: 1;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  border-right: 1px solid #111;
+  cursor: pointer;
+}
+
+.status-box:last-child {
+  border-right: none;
+}
+
+.green {
+  background: var(--green);
+}
+.amber {
+  background: var(--yellow);
+}
+.red {
+  background: var(--red);
+}
+
+/* Hovercard */
+.hovercard {
+  position: absolute;
+  min-width: 320px;
+  max-width: 380px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease;
+  z-index: 9999;
+}
+
+.hovercard.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.hc-top {
+  display: flex;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+  margin-bottom: 10px;
+  position: relative;
+}
+
+.hc-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: radial-gradient(circle at 30% 30%, #e9e7ff, #d7d4ff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.hc-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hc-name {
+  font-weight: 900;
+  font-size: 15px;
+}
+.hc-title {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.hc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.hc-item {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  padding: 8px;
+  background: #fafafa;
+}
+
+.hc-wide {
+  grid-column: 1 / -1;
+}
+
+.hc-label {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.hc-value {
+  margin-top: 4px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+}
+
+.dot.green {
+  background: var(--green);
+}
+.dot.amber {
+  background: var(--yellow);
+}
+.dot.red {
+  background: var(--red);
+}
+
+.hc-muted {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hc-rel {
+  margin-top: 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
+  padding-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.hc-rel-box {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  padding: 8px;
+  background: #fff;
+}
+
+.hc-rel-value {
+  margin-top: 6px;
+  font-weight: 700;
+  font-size: 12px;
+}
+.status-box.white {
+  background: #fff;
+  color: #000;
+  border: 1px solid #ccc;
+}
+/* LinkedIn Icon in hovercard - top right */
+.hovercard .hc-linkedIn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  cursor: pointer;
+}
+/* ---------- CSV Import Panel ---------- */
+.csv-panel {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.csv-panel.show {
+  display: flex;
+}
+
+.csv-panel-inner {
+  width: min(900px, 92vw);
+  max-height: 86vh;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  border: 1px solid rgba(0,0,0,0.15);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.csv-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.csv-title {
+  font-weight: 900;
+  font-size: 14px;
+}
+
+.csv-close {
+  border: 1px solid rgba(0,0,0,0.18);
+  background: #fff;
+  border-radius: 10px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.csv-help {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+#csvInput {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.18);
+  padding: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.csv-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.csv-actions button {
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.csv-actions .primary {
+  background: #22c55e;
+  border: 1px solid rgba(0,0,0,0.18);
+  border-radius: 10px;
+  font-weight: 800;
+}
+
+.csv-preview {
+  border-top: 1px solid rgba(0,0,0,0.12);
+  padding-top: 10px;
+  font-size: 12px;
+  color: var(--ink);
+  max-height: 200px;
+  overflow: auto;
+}
+
+.csv-preview .bad {
+  color: #b91c1c;
+  font-weight: 800;
+}
+
+.csv-preview .ok {
+  color: #065f46;
+  font-weight: 800;
+}
+#csvExportOut {
+  width: 100%;
+  min-height: 260px;
+  resize: vertical;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.18);
+  padding: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+/* ---------- Context menus (relationships + stakeholders) ---------- */
+.rel-menu{
+  position: absolute;
+  display: none;
+  z-index: 11000;            /* above hovercard (9999) and safe vs panels */
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.18);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+  min-width: 200px;
+}
+
+.rel-menu.show{
+  display: block;
+}
+
+.rel-menu button{
+  width: 100%;
+  padding: 8px 10px;
+  background: #fff;
+  border: 0;
+  border-radius: 10px;
+  text-align: left;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.rel-menu button:hover{
+  background: #f3f4f6;
+}
+
+.rel-menu-note {
+  max-width: 260px;
+  padding: 4px 10px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.owners-panel{
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  width: 360px;
+  max-height: 40vh;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.18);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 10px;
+  z-index: 9999;
+}
+
+/* Owners panel header + close button */
+.owners-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:10px;
+}
+
+.owners-title{ font-weight: 900; }
+.owners-actions{ display:flex; gap:6px; flex-wrap:wrap; }
+.owners-actions button{ padding:6px 8px; cursor:pointer; }
+
+#ownersPanel {
+  position: relative; /* anchor for absolute button */
+}
+.owners-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.18);
+  background: #fff;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  z-index: 10;
+}
+.owners-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.owner-row{
+  display:grid;
+  grid-template-columns: 70px 1fr auto;
+  gap:8px;
+  align-items:center;
+}
+
+.owner-row input{
+  width: 100%;
+  border: 1px solid rgba(0,0,0,0.18);
+  border-radius: 10px;
+  padding: 6px 8px;
+}
+
+.owner-row .owner-del{
+  padding: 6px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+/* ---------- Photo adjust modal ---------- */
+#photoAdjustModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo-adjust-inner {
+  background: #fff;
+  border-radius: 18px;
+  padding: 20px;
+  width: 280px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+}
+
+.photo-adjust-title {
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.photo-adjust-clip {
+  border-radius: 50%;
+  overflow: hidden;
+  position: relative;
+  margin: 0 auto 14px;
+  cursor: grab;
+  background: #ddd;
+  user-select: none;
+}
+
+.photo-adjust-img {
+  position: absolute;
+  pointer-events: none;
+}
+
+.photo-adjust-zoom-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.photo-adjust-slider {
+  flex: 1;
+}
+
+.photo-adjust-zoom-label {
+  font-size: 12px;
+  width: 36px;
+  text-align: right;
+  color: var(--muted);
+}
+
+.photo-adjust-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.photo-adjust-actions button {
+  padding: 8px 18px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.photo-adjust-save {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+}
+
+.photo-adjust-cancel {
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.18);
+}
+
+.owner-add-row{
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.owner-add-btn{
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.18);
+  background: #fff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #555;
+  transition: background 0.15s;
+}
+
+.owner-add-btn:hover{
+  background: #f0f0f0;
+}
+
+.owners-hint{
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.hidden {
+  display: none !important;
+}
+`;
+
+function getInlineStylesheetText() {
+  let css = "";
+  try {
+    for (const sheet of document.styleSheets) {
+      try {
+        const rules = sheet.cssRules || sheet.rules;
+        for (const rule of rules) css += rule.cssText + "\n";
+      } catch {
+        // Cross-origin or file:// restricted stylesheet; handled by getExportCss() fallback.
+      }
+    }
+  } catch {
+    // Accessing document.styleSheets itself failed; handled by getExportCss() fallback.
+  }
+  return css;
+}
+
+async function getExportCss() {
+  const liveCss = getInlineStylesheetText();
+  if (liveCss.trim()) return liveCss;
+
+  try {
+    const res = await fetch("style.css");
+    const text = await res.text();
+    if (text.trim()) return text;
+  } catch {
+    // fetch of local files is blocked in some browsers under file://.
+  }
+
+  return FALLBACK_STYLESHEET_CSS;
+}
+
+async function embedImagesAsDataUrls(root) {
+  const images = [...root.querySelectorAll("img")];
+  await Promise.all(images.map(async (img) => {
+    const src = img.getAttribute("src") || "";
+    if (!src || /^data:/i.test(src)) return;
+    const dataUrl = await tryGetImageDataUrl(src);
+    if (dataUrl) img.setAttribute("src", dataUrl);
+  }));
+}
+
+function createFullExportSurface(stakeholders, bounds) {
+  const padding = 40;
+  const surface = document.createElement("div");
+  surface.style.position = "relative";
+  surface.style.width = bounds.w + padding * 2 + "px";
+  surface.style.height = bounds.h + padding * 2 + "px";
+  surface.style.background = "#ffffff";
+
+  const canvasClone = canvas.cloneNode(true);
+  canvasClone.removeAttribute("id");
+  canvasClone.classList.add("export-canvas");
+  canvasClone.style.position = "absolute";
+  canvasClone.style.left = padding - bounds.x + "px";
+  canvasClone.style.top = padding - bounds.y + "px";
+  canvasClone.style.width = canvas.scrollWidth + "px";
+  canvasClone.style.height = canvas.scrollHeight + "px";
+  canvasClone.style.overflow = "visible";
+  canvasClone.style.background = "transparent";
+
+  const sourceStakeholders = [...canvas.querySelectorAll(".stakeholder")];
+  const clonedStakeholders = [...canvasClone.querySelectorAll(".stakeholder")];
+  clonedStakeholders.forEach((clone, i) => {
+    const source = sourceStakeholders[i];
+    if (!source) return;
+    syncClonedFormValues(source, clone);
+    clone.querySelectorAll('input[type="file"]').forEach((input) => input.remove());
+    replaceSnapshotTextInputs(clone);
+    clone.querySelectorAll(".connection-anchor").forEach((anchor) => anchor.remove());
+    clone.classList.remove("selecting");
+  });
+
+  canvasClone.querySelectorAll(".relationship-endpoint, #relMenu, #stakeMenu").forEach((node) => node.remove());
+  const clonedHovercard = canvasClone.querySelector("#hovercard");
+  if (clonedHovercard) clonedHovercard.classList.remove("show");
+  syncClonedRelationshipLines(canvasClone);
+  surface.appendChild(canvasClone);
+  return surface;
+}
+
+function buildHovercardScript(mapsJson, linkedInIconSrc) {
+  return `<script>
+(function(){
+  var root = document.querySelector(".export-canvas");
+  var hovercard = document.getElementById("hovercard");
+  if (!root || !hovercard) return;
+
+  var hcAvatar = document.getElementById("hcAvatar");
+  var hcName = document.getElementById("hcName");
+  var hcTitle = document.getElementById("hcTitle");
+  var hcRoleDot = document.getElementById("hcRoleDot");
+  var hcRole = document.getElementById("hcRole");
+  var hcOwnerDot = document.getElementById("hcOwnerDot");
+  var hcOwner = document.getElementById("hcOwner");
+  var hcInfluenceDot = document.getElementById("hcInfluenceDot");
+  var hcInfluence = document.getElementById("hcInfluence");
+  var hcContactDot = document.getElementById("hcContactDot");
+  var hcContact = document.getElementById("hcContact");
+  var hcViewDot = document.getElementById("hcViewDot");
+  var hcView = document.getElementById("hcView");
+  var hcAdvice = document.getElementById("hcAdvice");
+  var hcReportsTo = document.getElementById("hcReportsTo");
+  var hcDirectReports = document.getElementById("hcDirectReports");
+
+  var maps = ${mapsJson};
+  var linkedInIconSrc = ${JSON.stringify(linkedInIconSrc)};
+
+  function colorClass(type, val) {
+    if (type === "role" && val === "T") return "white";
+    if (type === "role") return "green";
+    if (type === "owner" && val === "") return "white";
+    if (type === "owner") return "green";
+    if (type === "influence") return val === "H" ? "green" : val === "M" ? "amber" : "red";
+    if (type === "view") return val === "+" ? "green" : val === "0" ? "amber" : "red";
+    if (type === "contact") return val === "H" ? "green" : val === "M" ? "amber" : "red";
+    return "amber";
+  }
+
+  function advice(v) {
+    if (v === "+") return "Suggested: leverage support and advocacy.";
+    if (v === "0") return "Suggested: keep engaged and share progress.";
+    if (v === "-") return "Suggested: address objections early.";
+    return "";
+  }
+
+  function getStatus(el, type) {
+    var b = el.querySelector('.status-box[data-type="' + type + '"]');
+    return b ? b.textContent : "";
+  }
+
+  function setField(dot, text, type, val) {
+    dot.className = "dot " + colorClass(type, val);
+    var label = val && maps[type] && maps[type][val] ? maps[type][val] : val;
+    text.textContent = val ? (label + " (" + val + ")") : "\\u2014";
+  }
+
+  function cardText(el, selector) {
+    var node = el.querySelector(selector);
+    if (!node) return "";
+    return (node.value !== undefined ? node.value : node.textContent) || "";
+  }
+
+  function updateHovercard(el) {
+    var name = cardText(el, ".name") || "Unnamed";
+    var title = cardText(el, ".titleInput") || "Role / Title";
+    hcName.textContent = name;
+    hcTitle.textContent = title;
+
+    hcAvatar.innerHTML = "";
+    var img = el.querySelector(".photo img");
+    if (img) {
+      var i = document.createElement("img");
+      i.src = img.src;
+      hcAvatar.appendChild(i);
+    } else {
+      hcAvatar.textContent = name[0] || "\\u2014";
+    }
+
+    setField(hcRoleDot, hcRole, "role", getStatus(el, "role"));
+    setField(hcOwnerDot, hcOwner, "owner", getStatus(el, "owner"));
+    setField(hcInfluenceDot, hcInfluence, "influence", getStatus(el, "influence"));
+    setField(hcContactDot, hcContact, "contact", getStatus(el, "contact"));
+    setField(hcViewDot, hcView, "view", getStatus(el, "view"));
+    hcAdvice.textContent = advice(getStatus(el, "view"));
+
+    hovercard.querySelectorAll(".hc-linkedin").forEach(function (n) { n.remove(); });
+    var linkedin = el.dataset.linkedin;
+    if (linkedin) {
+      var a = document.createElement("a");
+      a.className = "hc-linkedin";
+      a.href = linkedin;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.innerHTML = '<img src="' + linkedInIconSrc + '" width="20">';
+      var top = hovercard.querySelector(".hc-top");
+      if (top) top.appendChild(a);
+    }
+
+    hcReportsTo.textContent = "\\u2014";
+    hcDirectReports.textContent = "\\u2014";
+  }
+
+  function positionHovercard(el) {
+    var cr = root.getBoundingClientRect();
+    var sr = el.getBoundingClientRect();
+    hovercard.style.left = (sr.right - cr.left + 12) + "px";
+    hovercard.style.top = (sr.top - cr.top) + "px";
+  }
+
+  root.querySelectorAll(".stakeholder").forEach(function (card) {
+    card.style.cursor = "pointer";
+    card.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (e.target.closest("a")) return;
+      updateHovercard(card);
+      positionHovercard(card);
+      hovercard.classList.add("show");
+    });
+  });
+
+  document.addEventListener("click", function (e) {
+    if (e.target.closest(".stakeholder") || e.target.closest("#hovercard")) return;
+    hovercard.classList.remove("show");
+  });
+})();
+<\/script>`;
+}
+
+async function saveHtmlFile(html, fileName) {
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: fileName,
+        types: [{ description: "HTML file", accept: { "text/html": [".html"] } }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return;
+    } catch (err) {
+      if (err?.name === "AbortError") return; // cancelled
+      console.warn("Save picker failed, falling back:", err);
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function exportToFullHTML() {
+  try {
+    const stakeholders = [...canvas.querySelectorAll(".stakeholder")];
+    if (!stakeholders.length) {
+      alert("No stakeholders on canvas.");
+      return;
+    }
+
+    const bounds = getNormalExportBounds(stakeholders);
+    const surface = createFullExportSurface(stakeholders, bounds);
+    await waitForSnapshotImages(surface);
+    await embedImagesAsDataUrls(surface);
+
+    const css = await getExportCss();
+    const LINKEDIN_ICON_URL = "https://cdn-icons-png.flaticon.com/512/174/174857.png";
+    const linkedInIconSrc = (await tryGetImageDataUrl(LINKEDIN_ICON_URL)) || LINKEDIN_ICON_URL;
+    const hovercardScript = buildHovercardScript(JSON.stringify(maps), linkedInIconSrc);
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Stakeholder Map</title>
+<style>
+body { margin: 0; font-family: Arial, sans-serif; background: #f4f6f8; }
+.export-wrap { display: flex; justify-content: center; padding: 24px; }
+${css}
+</style>
+</head>
+<body>
+<div class="export-wrap">${surface.outerHTML}</div>
+${hovercardScript}
+</body>
+</html>`;
+
+    await saveHtmlFile(html, "stakeholder-map.html");
+  } catch (err) {
+    console.error("Full HTML export failed:", err);
+    alert("Full HTML export failed:\n\n" + (err?.message || err));
+  }
+}
+
 function isValidImageUrl(url) {
   try {
     const u = new URL(url);
