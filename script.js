@@ -3307,7 +3307,12 @@ function buildFitToViewportScript() {
   if (!surface) return;
 
   var naturalW = surface.offsetWidth;
-  var naturalH = surface.offsetHeight;
+  // The click-to-open detail popup ("hovercard") renders below the clicked
+  // card and is clipped by the sizer's overflow:hidden. Reserve extra room
+  // beneath the map's own content so the popup always has space to render,
+  // even when opened from a card in the bottom row.
+  var hovercardClearance = 460;
+  var naturalH = surface.offsetHeight + hovercardClearance;
 
   var sizer = document.createElement("div");
   sizer.style.position = "relative";
