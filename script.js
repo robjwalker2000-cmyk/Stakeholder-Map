@@ -595,8 +595,16 @@ function enableDrag(el) {
   let groupOriginX = 0, groupOriginY = 0;
 
   el.addEventListener("mousedown", (e) => {
-    if (e.target.closest("input") || e.target.closest("a") || e.target.closest(".status-box") || e.target.closest(".connection-anchor")) return;
-    if (e.shiftKey) return; // shift+click toggles selection instead of dragging
+    if (e.target.closest("a") || e.target.closest(".connection-anchor")) return;
+    if (e.shiftKey) {
+      // Shift+click always toggles selection, even over inputs/photo/status
+      // boxes, so it never falls through to the browser's native text
+      // selection drag (which made the "select several stakeholders" and
+      // then "move" gesture drag text instead of the cards).
+      e.preventDefault();
+      return;
+    }
+    if (e.target.closest("input") || e.target.closest(".status-box")) return;
     drag = true;
     el.style.zIndex = zIndex++;
 
@@ -654,7 +662,10 @@ function enablePhotoUpload(el) {
   const titleInput = el.querySelector(".titleInput");
   if (titleInput) titleInput.oninput = scheduleAutosave;
 
-  p.onclick = () => i.click();
+  p.onclick = (e) => {
+    if (e.shiftKey) return; // let shift+click toggle card selection instead
+    i.click();
+  };
   i.onchange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -683,8 +694,9 @@ function enableStatus(el) {
   el.querySelectorAll(".status-box").forEach((b) => {
     let idx = -1;
 
-    b.onclick = () => {
+    b.onclick = (e) => {
       if (relationshipMode) return;
+      if (e.shiftKey) return; // let shift+click toggle card selection instead
 
       const vals = JSON.parse(b.dataset.values || "[]");
       if (!vals.length) return;
@@ -782,6 +794,13 @@ function enableClick(el) {
       return;
     }
 
+    // Shift+click always toggles selection, even over inputs/photo/status
+    // boxes, so it doesn't fall through to their own click behavior.
+    if (e.shiftKey && !e.target.closest("a") && !e.target.closest(".connection-anchor")) {
+      toggleMultiSelect(el);
+      return;
+    }
+
     // Status boxes, photo, inputs and links handle their own clicks
     if (
       e.target.closest(".status-box") ||
@@ -790,11 +809,6 @@ function enableClick(el) {
       e.target.closest("a") ||
       e.target.closest(".connection-anchor")
     ) return;
-
-    if (e.shiftKey) {
-      toggleMultiSelect(el);
-      return;
-    }
 
     if (multiSelected.size) clearMultiSelect();
 
