@@ -3348,7 +3348,20 @@ function buildFitToViewportScript() {
   }
 
   applyFit();
-  window.addEventListener("resize", applyFit);
+
+  // Browser/pinch zoom changes devicePixelRatio and also fires "resize";
+  // re-fitting on those would immediately shrink the view back down and
+  // make it impossible to zoom in to see detail. Only re-fit for resizes
+  // that aren't just a zoom change (e.g. the window/pane actually resizing).
+  var lastDPR = window.devicePixelRatio;
+  window.addEventListener("resize", function () {
+    var dpr = window.devicePixelRatio;
+    if (dpr !== lastDPR) {
+      lastDPR = dpr;
+      return;
+    }
+    applyFit();
+  });
 })();
 <\/script>`;
 }
@@ -3570,10 +3583,33 @@ async function exportToFullHTML() {
 html, body { margin: 0; height: 100%; font-family: Arial, sans-serif; background: #f4f6f8; }
 .export-wrap { display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 24px; box-sizing: border-box; }
 .export-surface { flex: none; }
+.view-only-badge {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  background: rgba(31, 41, 55, 0.92);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  user-select: none;
+}
 ${css}
 </style>
 </head>
 <body>
+<div class="view-only-badge">👁️ View Only</div>
 <div class="export-wrap">${surface.outerHTML}</div>
 ${fitToViewportScript}
 ${hovercardScript}
